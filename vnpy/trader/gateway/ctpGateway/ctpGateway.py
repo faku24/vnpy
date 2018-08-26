@@ -247,10 +247,6 @@ class CtpMdApi(MdApi):
         self.brokerID = EMPTY_STRING        # 经纪商代码
         self.address = EMPTY_STRING         # 服务器地址
         
-        self.tradingDt = None               # 交易日datetime对象
-        self.tradingDate = EMPTY_STRING     # 交易日期字符串
-        self.tickTime = None                # 最新行情time对象
-        
     #----------------------------------------------------------------------
     def onFrontConnected(self):
         """服务器连接"""
@@ -298,14 +294,6 @@ class CtpMdApi(MdApi):
             for subscribeReq in self.subscribedSymbols:
                 self.subscribe(subscribeReq)
                 
-            # 获取交易日
-            #self.tradingDate = data['TradingDay']
-            #self.tradingDt = datetime.strptime(self.tradingDate, '%Y%m%d')
-            
-            # 登录时通过本地时间来获取当前的日期
-            self.tradingDt = datetime.now()
-            self.tradingDate = self.tradingDt.strftime('%Y%m%d')
-                
         # 否则，推送错误信息
         else:
             err = VtErrorData()
@@ -335,8 +323,12 @@ class CtpMdApi(MdApi):
     #----------------------------------------------------------------------  
     def onRspSubMarketData(self, data, error, n, last):
         """订阅合约回报"""
-        # 通常不在乎订阅错误，选择忽略
-        pass
+        if 'ErrorID' in error and error['ErrorID']:
+            err = VtErrorData()
+            err.gatewayName = self.gatewayName
+            err.errorID = error['ErrorID']
+            err.errorMsg = error['ErrorMsg'].decode('gbk')
+            self.gateway.onError(err)
         
     #----------------------------------------------------------------------  
     def onRspUnSubMarketData(self, data, error, n, last):
@@ -384,18 +376,7 @@ class CtpMdApi(MdApi):
         
         # 大商所日期转换
         if tick.exchange is EXCHANGE_DCE:
-            newTime = datetime.strptime(tick.time, '%H:%M:%S.%f').time()    # 最新tick时间戳
-            
-            # 如果新tick的时间小于夜盘分隔，且上一个tick的时间大于夜盘分隔，则意味着越过了12点
-            if (self.tickTime and 
-                newTime < NIGHT_TRADING and
-                self.tickTime > NIGHT_TRADING):
-                self.tradingDt += timedelta(1)                          # 日期加1
-                self.tradingDate = self.tradingDt.strftime('%Y%m%d')    # 生成新的日期字符串
-                
-            tick.date = self.tradingDate    # 使用本地维护的日期
-            
-            self.tickTime = newTime         # 更新上一个tick时间
+            tick.date = datetime.now().strftime('%Y%m%d')
         
         self.gateway.onTick(tick)
         
@@ -741,9 +722,15 @@ class CtpTdApi(TdApi):
             pos.direction = posiDirectionMapReverse.get(data['PosiDirection'], '')
             pos.vtPositionName = '.'.join([pos.vtSymbol, pos.direction]) 
         
+        exchange = self.symbolExchangeDict.get(pos.symbol, EXCHANGE_UNKNOWN)
+        
         # 针对上期所持仓的今昨分条返回（有昨仓、无今仓），读取昨仓数据
-        if data['YdPosition'] and not data['TodayPosition']:
-            pos.ydPosition = data['Position']
+        if exchange == EXCHANGE_SHFE:
+            if data['YdPosition'] and not data['TodayPosition']:
+                pos.ydPosition = data['Position']
+        # 否则基于总持仓和今持仓来计算昨仓数据
+        else:
+            pos.ydPosition = data['Position'] - data['TodayPosition']
             
         # 计算成本
         size = self.symbolSizeDict[pos.symbol]
@@ -844,9 +831,15 @@ class CtpTdApi(TdApi):
         contract.size = data['VolumeMultiple']
         contract.priceTick = data['PriceTick']
         contract.strikePrice = data['StrikePrice']
-        contract.underlyingSymbol = data['UnderlyingInstrID']
         contract.productClass = productClassMapReverse.get(data['ProductClass'], PRODUCT_UNKNOWN)
         contract.expiryDate = data['ExpireDate']
+        
+        # ETF期权的标的命名方式需要调整（ETF代码 + 到期月份）
+        if contract.exchange in [EXCHANGE_SSE, EXCHANGE_SZSE]:
+            contract.underlyingSymbol = '-'.join([data['UnderlyingInstrID'], str(data['ExpireDate'])[2:-2]])
+        # 商品期权无需调整
+        else:
+            contract.underlyingSymbol = data['UnderlyingInstrID']   
         
         # 期权类型
         if contract.productClass is PRODUCT_OPTION:

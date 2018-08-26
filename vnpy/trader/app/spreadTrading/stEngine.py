@@ -3,6 +3,7 @@
 import json
 import traceback
 import shelve
+from collections import OrderedDict
 
 from vnpy.event import Event
 from vnpy.trader.vtFunction import getJsonPath, getTempPath
@@ -195,13 +196,7 @@ class StDataEngine(object):
         spread.calculatePos()
         
         # 推送价差持仓更新
-        event1 = Event(EVENT_SPREADTRADING_POS+spread.name)
-        event1.dict_['data'] = spread
-        self.eventEngine.put(event1)
-        
-        event2 = Event(EVENT_SPREADTRADING_POS)
-        event2.dict_['data'] = spread
-        self.eventEngine.put(event2)
+        self.putSpreadPosEvent(spread)
     
     #----------------------------------------------------------------------
     def processPosEvent(self, event):
@@ -239,7 +234,6 @@ class StDataEngine(object):
         event2.dict_['data'] = spread
         self.eventEngine.put(event2)         
         
-    
     #----------------------------------------------------------------------
     def registerEvent(self):
         """"""
@@ -290,8 +284,8 @@ class StAlgoEngine(object):
         self.mainEngine = mainEngine
         self.eventEngine = eventEngine
         
-        self.algoDict = {}          # spreadName:algo
-        self.vtSymbolAlgoDict = {}  # vtSymbol:algo
+        self.algoDict = OrderedDict()   # spreadName:algo
+        self.vtSymbolAlgoDict = {}      # vtSymbol:algo
         
         self.registerEvent()
         
@@ -308,6 +302,10 @@ class StAlgoEngine(object):
     def processSpreadTickEvent(self, event):
         """处理价差行情事件"""
         spread = event.dict_['data']
+        
+        # 若价差的买卖价均为0，则意味着尚未初始化，直接返回
+        if not spread.bidPrice and not spread.askPrice:
+            return
         
         algo = self.algoDict.get(spread.name, None)
         if algo:
