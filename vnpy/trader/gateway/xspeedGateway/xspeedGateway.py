@@ -8,6 +8,7 @@ import os
 import json
 import time
 from copy import copy
+from time import sleep
 
 from vnpy.api.xspeed import MdApi, TdApi, defineDict
 from vnpy.trader.vtGateway import *
@@ -85,7 +86,7 @@ class XspeedGateway(VtGateway):
     def connect(self):
         """连接"""       
         try:
-            f = file(self.filePath)
+            f = open(self.filePath)
         except IOError:
             log = VtLogData()
             log.gatewayName = self.gatewayName
@@ -95,6 +96,7 @@ class XspeedGateway(VtGateway):
         
         # 解析json文件
         setting = json.load(f)
+        f.close()
         try:
             accountID = str(setting['accountID'])
             password = str(setting['password'])

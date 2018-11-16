@@ -8,6 +8,7 @@ vn.shzd的gateway接入
 3. 持仓全部平光后，再次查询时会没有该合约的推送（和CTP不同），为了避免最后平仓
    不更新的情况，使用缓存机制来处理
 '''
+from __future__ import print_function
 
 
 import os
@@ -76,7 +77,7 @@ class ShzdGateway(VtGateway):
     def connect(self):
         """连接"""
         try:
-            f = file(self.filePath)
+            f = open(self.filePath)
         except IOError:
             log = VtLogData()
             log.gatewayName = self.gatewayName
@@ -86,6 +87,7 @@ class ShzdGateway(VtGateway):
         
         # 解析json文件
         setting = json.load(f)
+        f.close()
         try:
             frontAddress = str(setting['frontAddress'])
             frontPort = int(setting['frontPort'])
@@ -721,9 +723,9 @@ class ShzdGatewayApi(ShzdApi):
 #----------------------------------------------------------------------
 def printDict(d):
     """打印字典"""
-    print '-' * 50
+    print('-' * 50)
     l = d.keys()
     l.sort()
     for k in l:
-        print k, ':', d[k]
+        print(k, ':', d[k])
     

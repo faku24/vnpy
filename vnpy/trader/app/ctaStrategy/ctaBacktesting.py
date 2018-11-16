@@ -5,6 +5,7 @@
 可以使用和实盘相同的代码进行回测。
 '''
 from __future__ import division
+from __future__ import print_function
 
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -13,9 +14,11 @@ import multiprocessing
 import copy
 
 import pymongo
-import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+
+from vnpy.rpc import RpcClient, RpcServer, RemoteException
+
 
 # 如果安装了seaborn则设置为白色风格
 try:
@@ -70,6 +73,7 @@ class BacktestingEngine(object):
         
         self.dbClient = None        # 数据库客户端
         self.dbCursor = None        # 数据库指针
+        self.hdsClient = None       # 历史数据服务器客户端
         
         self.initData = []          # 初始化用的数据
         self.dbName = ''            # 回测数据库名
@@ -112,7 +116,7 @@ class BacktestingEngine(object):
     #----------------------------------------------------------------------
     def output(self, content):
         """输出内容"""
-        print str(datetime.now()) + "\t" + content     
+        print(str(datetime.now()) + "\t" + content)     
     
     #------------------------------------------------
     # 参数设置相关
@@ -181,13 +185,22 @@ class BacktestingEngine(object):
     #------------------------------------------------    
     
     #----------------------------------------------------------------------
+    def initHdsClient(self):
+        """初始化历史数据服务器客户端"""
+        reqAddress = 'tcp://localhost:5555'
+        subAddress = 'tcp://localhost:7777'   
+        
+        self.hdsClient = RpcClient(reqAddress, subAddress)
+        self.hdsClient.start()
+    
+    #----------------------------------------------------------------------
     def loadHistoryData(self):
         """载入历史数据"""
         self.dbClient = pymongo.MongoClient(globalSetting['mongoHost'], globalSetting['mongoPort'])
         collection = self.dbClient[self.dbName][self.symbol]          
 
         self.output(u'开始载入数据')
-      
+        
         # 首先根据回测模式，确认要使用的数据类
         if self.mode == self.BAR_MODE:
             dataClass = VtBarData
@@ -196,10 +209,16 @@ class BacktestingEngine(object):
             dataClass = VtTickData
             func = self.newTick
 
-        # 载入初始化需要用的数据
-        flt = {'datetime':{'$gte':self.dataStartDate,
-                           '$lt':self.strategyStartDate}}        
-        initCursor = collection.find(flt).sort('datetime')
+        # 载入初始化需要用的数据        
+        if self.hdsClient:
+            initCursor = self.hdsClient.loadHistoryData(self.dbName,
+                                                        self.symbol,
+                                                        self.dataStartDate,
+                                                        self.strategyStartDate)
+        else:
+            flt = {'datetime':{'$gte':self.dataStartDate,
+                               '$lt':self.strategyStartDate}}        
+            initCursor = collection.find(flt).sort('datetime')
         
         # 将数据从查询指针中读取出，并生成列表
         self.initData = []              # 清空initData列表
@@ -209,14 +228,24 @@ class BacktestingEngine(object):
             self.initData.append(data)      
         
         # 载入回测数据
-        if not self.dataEndDate:
-            flt = {'datetime':{'$gte':self.strategyStartDate}}   # 数据过滤条件
+        if self.hdsClient:
+            self.dbCursor = self.hdsClient.loadHistoryData(self.dbName,
+                                                           self.symbol,
+                                                           self.strategyStartDate,
+                                                           self.dataEndDate)
         else:
-            flt = {'datetime':{'$gte':self.strategyStartDate,
-                               '$lte':self.dataEndDate}}  
-        self.dbCursor = collection.find(flt).sort('datetime')
+            if not self.dataEndDate:
+                flt = {'datetime':{'$gte':self.strategyStartDate}}   # 数据过滤条件
+            else:
+                flt = {'datetime':{'$gte':self.strategyStartDate,
+                                   '$lte':self.dataEndDate}}  
+            self.dbCursor = collection.find(flt).sort('datetime')
         
-        self.output(u'载入完成，数据量：%s' %(initCursor.count() + self.dbCursor.count()))
+        if isinstance(self.dbCursor, list):
+            count = len(initCursor) + len(self.dbCursor)
+        else:
+            count = initCursor.count() + self.dbCursor.count()
+        self.output(u'载入完成，数据量：%s' %count)
         
     #----------------------------------------------------------------------
     def runBacktesting(self):
@@ -234,8 +263,8 @@ class BacktestingEngine(object):
 
         self.output(u'开始回测')
         
-        self.strategy.inited = True
         self.strategy.onInit()
+        self.strategy.inited = True
         self.output(u'策略初始化完成')
         
         self.strategy.trading = True
@@ -300,7 +329,7 @@ class BacktestingEngine(object):
             sellBestCrossPrice = self.tick.bidPrice1
         
         # 遍历限价单字典中的所有限价单
-        for orderID, order in self.workingLimitOrderDict.items():
+        for orderID, order in list(self.workingLimitOrderDict.items()):
             # 推送委托进入队列（未成交）的状态更新
             if not order.status:
                 order.status = STATUS_NOTTRADED
@@ -353,7 +382,8 @@ class BacktestingEngine(object):
                 self.strategy.onOrder(order)
                 
                 # 从字典中删除该限价单
-                del self.workingLimitOrderDict[orderID]
+                if orderID in self.workingLimitOrderDict:
+                    del self.workingLimitOrderDict[orderID]
                 
     #----------------------------------------------------------------------
     def crossStopOrder(self):
@@ -369,7 +399,7 @@ class BacktestingEngine(object):
             bestCrossPrice = self.tick.lastPrice
         
         # 遍历停止单字典中的所有停止单
-        for stopOrderID, so in self.workingStopOrderDict.items():
+        for stopOrderID, so in list(self.workingStopOrderDict.items()):
             # 判断是否会成交
             buyCross = so.direction==DIRECTION_LONG and so.price<=buyCrossPrice
             sellCross = so.direction==DIRECTION_SHORT and so.price>=sellCrossPrice
@@ -556,13 +586,23 @@ class BacktestingEngine(object):
     def cancelAll(self, name):
         """全部撤单"""
         # 撤销限价单
-        for orderID in self.workingLimitOrderDict.keys():
+        for orderID in list(self.workingLimitOrderDict.keys()):
             self.cancelOrder(orderID)
         
         # 撤销停止单
-        for stopOrderID in self.workingStopOrderDict.keys():
+        for stopOrderID in list(self.workingStopOrderDict.keys()):
             self.cancelStopOrder(stopOrderID)
 
+    #----------------------------------------------------------------------
+    def saveSyncData(self, strategy):
+        """保存同步数据（无效）"""
+        pass
+    
+    #----------------------------------------------------------------------
+    def getPriceTick(self, strategy):
+        """获取最小价格变动"""
+        return self.priceTick
+    
     #------------------------------------------------
     # 结果计算相关
     #------------------------------------------------      
@@ -573,6 +613,11 @@ class BacktestingEngine(object):
         计算回测结果
         """
         self.output(u'计算回测结果')
+        
+        # 检查成交记录
+        if not self.tradeDict:
+            self.output(u'成交记录为空，无法计算回测结果')
+            return {}
         
         # 首先基于回测后的成交记录，计算每笔交易的盈亏
         resultList = []             # 交易结果列表
@@ -772,6 +817,7 @@ class BacktestingEngine(object):
         d['profitLossRatio'] = profitLossRatio
         d['posList'] = posList
         d['tradeTimeList'] = tradeTimeList
+        d['resultList'] = resultList
         
         return d
         
@@ -819,7 +865,7 @@ class BacktestingEngine(object):
             del d['posList'][-1]
         tradeTimeIndex = [item.strftime("%m/%d %H:%M:%S") for item in d['tradeTimeList']]
         xindex = np.arange(0, len(tradeTimeIndex), np.int(len(tradeTimeIndex)/10))
-        tradeTimeIndex = map(lambda i: tradeTimeIndex[i], xindex)
+        tradeTimeIndex = list(map(lambda i: tradeTimeIndex[i], xindex))
         pPos.plot(d['posList'], color='k', drawstyle='steps-pre')
         pPos.set_ylim(-1.2, 1.2)
         plt.sca(pPos)
@@ -845,6 +891,9 @@ class BacktestingEngine(object):
         self.tradeCount = 0
         self.tradeDict.clear()
         
+        # 清空逐日统计相关
+        self.dailyResultDict.clear()
+        
     #----------------------------------------------------------------------
     def runOptimization(self, strategyClass, optimizationSetting):
         """优化参数"""
@@ -864,21 +913,18 @@ class BacktestingEngine(object):
             self.output('setting: %s' %str(setting))
             self.initStrategy(strategyClass, setting)
             self.runBacktesting()
-            d = self.calculateBacktestingResult()
+            self.calculateDailyResult()
+            d, result = self.calculateDailyStatistics()            
             try:
-                targetValue = d[targetName]
+                targetValue = result[targetName]
             except KeyError:
                 targetValue = 0
-            resultList.append(([str(setting)], targetValue))
+            resultList.append(([str(setting)], targetValue, result))
         
         # 显示结果
         resultList.sort(reverse=True, key=lambda result:result[1])
-        self.output('-' * 30)
-        self.output(u'优化结果：')
-        for result in resultList:
-            self.output(u'%s: %s' %(result[0], result[1]))
-        return result
-            
+        return self.outputOptimizeResult(resultList)
+
     #----------------------------------------------------------------------
     def runParallelOptimization(self, strategyClass, optimizationSetting):
         """并行优化参数"""
@@ -906,10 +952,15 @@ class BacktestingEngine(object):
         # 显示结果
         resultList = [res.get() for res in l]
         resultList.sort(reverse=True, key=lambda result:result[1])
+        return resultList
+
+    #----------------------------------------------------------------------
+    def outputOptimizeResult(self, resultList):
         self.output('-' * 30)
         self.output(u'优化结果：')
         for result in resultList:
-            self.output(u'%s: %s' %(result[0], result[1]))    
+            self.output(u'参数：%s，目标：%s' % (result[0], result[1]))
+        return resultList
 
     #----------------------------------------------------------------------
     def updateDailyClose(self, dt, price):
@@ -926,6 +977,11 @@ class BacktestingEngine(object):
         """计算按日统计的交易结果"""
         self.output(u'计算按日统计结果')
         
+        # 检查成交记录
+        if not self.tradeDict:
+            self.output(u'成交记录为空，无法计算回测结果')
+            return {}
+        
         # 将成交添加到每日交易结果中
         for trade in self.tradeDict.values():
             date = trade.dt.date()
@@ -941,119 +997,171 @@ class BacktestingEngine(object):
             
             dailyResult.calculatePnl(openPosition, self.size, self.rate, self.slippage )
             openPosition = dailyResult.closePosition
-            
-        # 生成DataFrame
-        resultDict = {k:[] for k in dailyResult.__dict__.keys()}
-        for dailyResult in self.dailyResultDict.values():
-            for k, v in dailyResult.__dict__.items():
-                resultDict[k].append(v)
-                
-        resultDf = pd.DataFrame.from_dict(resultDict)
-        
-        # 计算衍生数据
-        resultDf = resultDf.set_index('date')
-        
-        return resultDf
     
     #----------------------------------------------------------------------
-    def showDailyResult(self, df=None):
-        """显示按日统计的交易结果"""
-        if df is None:
-            df = self.calculateDailyResult()
-
-        df['balance'] = df['netPnl'].cumsum() + self.capital
-        df['return'] = (np.log(df['balance']) - np.log(df['balance'].shift(1))).fillna(0)
-        df['highlevel'] = df['balance'].rolling(min_periods=1,window=len(df),center=False).max()
-        df['drawdown'] = df['balance'] - df['highlevel']        
+    def calculateDailyStatistics(self, annualDays=240):
+        """计算按日统计的结果"""
+        dateList = self.dailyResultDict.keys()
+        resultList = self.dailyResultDict.values()
         
-        # 计算统计结果
-        startDate = df.index[0]
-        endDate = df.index[-1]
-
-        totalDays = len(df)
-        profitDays = len(df[df['netPnl']>0])
-        lossDays = len(df[df['netPnl']<0])
+        startDate = dateList[0]
+        endDate = dateList[-1]  
+        totalDays = len(dateList)
         
-        endBalance = df['balance'].iloc[-1]
-        maxDrawdown = df['drawdown'].min()
+        profitDays = 0
+        lossDays = 0
+        endBalance = self.capital
+        highlevel = self.capital
+        totalNetPnl = 0
+        totalTurnover = 0
+        totalCommission = 0
+        totalSlippage = 0
+        totalTradeCount = 0
         
-        totalNetPnl = df['netPnl'].sum()
-        dailyNetPnl = totalNetPnl / totalDays
+        netPnlList = []
+        balanceList = []
+        highlevelList = []
+        drawdownList = []
+        ddPercentList = []
+        returnList = []
         
-        totalCommission = df['commission'].sum()
-        dailyCommission = totalCommission / totalDays
+        for result in resultList:
+            if result.netPnl > 0:
+                profitDays += 1
+            elif result.netPnl < 0:
+                lossDays += 1
+            netPnlList.append(result.netPnl)
+            
+            prevBalance = endBalance
+            endBalance += result.netPnl
+            balanceList.append(endBalance)
+            returnList.append(endBalance/prevBalance - 1)
+            
+            highlevel = max(highlevel, endBalance)
+            highlevelList.append(highlevel)
+            
+            drawdown = endBalance - highlevel
+            drawdownList.append(drawdown)
+            ddPercentList.append(drawdown/highlevel*100)
+            
+            totalTurnover += result.turnover
+            totalCommission += result.commission
+            totalSlippage += result.slippage
+            totalTradeCount += result.tradeCount
+            totalNetPnl += result.netPnl
         
-        totalSlippage = df['slippage'].sum()
-        dailySlippage = totalSlippage / totalDays
-        
-        totalTurnover = df['turnover'].sum()
-        dailyTurnover = totalTurnover / totalDays
-        
-        totalTradeCount = df['tradeCount'].sum()
-        dailyTradeCount = totalTradeCount / totalDays
-        
-        totalReturn = (endBalance/self.capital - 1) * 100
-        dailyReturn = df['return'].mean() * 100
-        returnStd = df['return'].std() * 100
+        maxDrawdown = min(drawdownList)
+        maxDdPercent = min(ddPercentList)
+        totalReturn = (endBalance / self.capital - 1) * 100
+        dailyReturn = np.mean(returnList) * 100
+        annualizedReturn = dailyReturn * annualDays
+        returnStd = np.std(returnList) * 100
         
         if returnStd:
-            sharpeRatio = dailyReturn / returnStd * np.sqrt(240)
+            sharpeRatio = dailyReturn / returnStd * np.sqrt(annualDays)
         else:
             sharpeRatio = 0
         
+        # 返回结果
+        result = {
+            'startDate': startDate,
+            'endDate': endDate,
+            'totalDays': totalDays,
+            'profitDays': profitDays,
+            'lossDays': lossDays,
+            'endBalance': endBalance,
+            'maxDrawdown': maxDrawdown,
+            'maxDdPercent': maxDdPercent,
+            'totalNetPnl': totalNetPnl,
+            'dailyNetPnl': totalNetPnl/totalDays,
+            'totalCommission': totalCommission,
+            'dailyCommission': totalCommission/totalDays,
+            'totalSlippage': totalSlippage,
+            'dailySlippage': totalSlippage/totalDays,
+            'totalTurnover': totalTurnover,
+            'dailyTurnover': totalTurnover/totalDays,
+            'totalTradeCount': totalTradeCount,
+            'dailyTradeCount': totalTradeCount/totalDays,
+            'totalReturn': totalReturn,
+            'annualizedReturn': annualizedReturn,
+            'dailyReturn': dailyReturn,
+            'returnStd': returnStd,
+            'sharpeRatio': sharpeRatio
+            }
+        
+        d = {}
+        d['balance'] = balanceList
+        d['return'] = returnList
+        d['highLevel'] = highlevelList
+        d['drawdown'] = drawdownList
+        d['ddPercent'] = ddPercentList
+        d['date'] = dateList
+        d['netPnl'] = netPnlList
+        
+        return d, result
+    
+    #----------------------------------------------------------------------
+    def showDailyResult(self, d=None, result=None):
+        """显示按日统计的交易结果"""
+        if d is None:
+            self.calculateDailyResult()
+            d, result = self.calculateDailyStatistics()
+            
         # 输出统计结果
         self.output('-' * 30)
-        self.output(u'首个交易日：\t%s' % startDate)
-        self.output(u'最后交易日：\t%s' % endDate)
+        self.output(u'首个交易日：\t%s' % result['startDate'])
+        self.output(u'最后交易日：\t%s' % result['endDate'])
         
-        self.output(u'总交易日：\t%s' % totalDays)
-        self.output(u'盈利交易日\t%s' % profitDays)
-        self.output(u'亏损交易日：\t%s' % lossDays)
+        self.output(u'总交易日：\t%s' % result['totalDays'])
+        self.output(u'盈利交易日\t%s' % result['profitDays'])
+        self.output(u'亏损交易日：\t%s' % result['lossDays'])
         
         self.output(u'起始资金：\t%s' % self.capital)
-        self.output(u'结束资金：\t%s' % formatNumber(endBalance))
+        self.output(u'结束资金：\t%s' % formatNumber(result['endBalance']))
     
-        self.output(u'总收益率：\t%s' % formatNumber(totalReturn))
-        self.output(u'总盈亏：\t%s' % formatNumber(totalNetPnl))
-        self.output(u'最大回撤: \t%s' % formatNumber(maxDrawdown))      
+        self.output(u'总收益率：\t%s%%' % formatNumber(result['totalReturn']))
+        self.output(u'年化收益：\t%s%%' % formatNumber(result['annualizedReturn']))
+        self.output(u'总盈亏：\t%s' % formatNumber(result['totalNetPnl']))
+        self.output(u'最大回撤: \t%s' % formatNumber(result['maxDrawdown']))   
+        self.output(u'百分比最大回撤: %s%%' % formatNumber(result['maxDdPercent']))   
         
-        self.output(u'总手续费：\t%s' % formatNumber(totalCommission))
-        self.output(u'总滑点：\t%s' % formatNumber(totalSlippage))
-        self.output(u'总成交金额：\t%s' % formatNumber(totalTurnover))
-        self.output(u'总成交笔数：\t%s' % formatNumber(totalTradeCount))
+        self.output(u'总手续费：\t%s' % formatNumber(result['totalCommission']))
+        self.output(u'总滑点：\t%s' % formatNumber(result['totalSlippage']))
+        self.output(u'总成交金额：\t%s' % formatNumber(result['totalTurnover']))
+        self.output(u'总成交笔数：\t%s' % formatNumber(result['totalTradeCount']))
         
-        self.output(u'日均盈亏：\t%s' % formatNumber(dailyNetPnl))
-        self.output(u'日均手续费：\t%s' % formatNumber(dailyCommission))
-        self.output(u'日均滑点：\t%s' % formatNumber(dailySlippage))
-        self.output(u'日均成交金额：\t%s' % formatNumber(dailyTurnover))
-        self.output(u'日均成交笔数：\t%s' % formatNumber(dailyTradeCount))
+        self.output(u'日均盈亏：\t%s' % formatNumber(result['dailyNetPnl']))
+        self.output(u'日均手续费：\t%s' % formatNumber(result['dailyCommission']))
+        self.output(u'日均滑点：\t%s' % formatNumber(result['dailySlippage']))
+        self.output(u'日均成交金额：\t%s' % formatNumber(result['dailyTurnover']))
+        self.output(u'日均成交笔数：\t%s' % formatNumber(result['dailyTradeCount']))
         
-        self.output(u'日均收益率：\t%s%%' % formatNumber(dailyReturn))
-        self.output(u'收益标准差：\t%s%%' % formatNumber(returnStd))
-        self.output(u'Sharpe Ratio：\t%s' % formatNumber(sharpeRatio))
+        self.output(u'日均收益率：\t%s%%' % formatNumber(result['dailyReturn']))
+        self.output(u'收益标准差：\t%s%%' % formatNumber(result['returnStd']))
+        self.output(u'Sharpe Ratio：\t%s' % formatNumber(result['sharpeRatio']))
         
         # 绘图
         fig = plt.figure(figsize=(10, 16))
         
         pBalance = plt.subplot(4, 1, 1)
         pBalance.set_title('Balance')
-        df['balance'].plot(legend=True)
+        plt.plot(d['date'], d['balance'])
         
         pDrawdown = plt.subplot(4, 1, 2)
         pDrawdown.set_title('Drawdown')
-        pDrawdown.fill_between(range(len(df)), df['drawdown'].values)
+        pDrawdown.fill_between(range(len(d['drawdown'])), d['drawdown'])
         
         pPnl = plt.subplot(4, 1, 3)
         pPnl.set_title('Daily Pnl') 
-        df['netPnl'].plot(kind='bar', legend=False, grid=False, xticks=[])
+        plt.bar(range(len(d['drawdown'])), d['netPnl'])
 
         pKDE = plt.subplot(4, 1, 4)
         pKDE.set_title('Daily Pnl Distribution')
-        df['netPnl'].hist(bins=50)
+        plt.hist(d['netPnl'], bins=50)
         
         plt.show()
-       
-        
+    
+
 ########################################################################
 class TradingResult(object):
     """每笔交易的结果"""
@@ -1160,11 +1268,11 @@ class OptimizationSetting(object):
             return 
         
         if end < start:
-            print u'参数起始点必须不大于终止点'
+            print(u'参数起始点必须不大于终止点')
             return
         
         if step <= 0:
-            print u'参数布进必须大于0'
+            print(u'参数布进必须大于0')
             return
         
         l = []
@@ -1200,6 +1308,61 @@ class OptimizationSetting(object):
         self.optimizeTarget = target
 
 
+########################################################################
+class HistoryDataServer(RpcServer):
+    """历史数据缓存服务器"""
+
+    #----------------------------------------------------------------------
+    def __init__(self, repAddress, pubAddress):
+        """Constructor"""
+        super(HistoryDataServer, self).__init__(repAddress, pubAddress)
+        
+        self.dbClient = pymongo.MongoClient(globalSetting['mongoHost'], 
+                                            globalSetting['mongoPort'])
+        
+        self.historyDict = {}
+        
+        self.register(self.loadHistoryData)
+    
+    #----------------------------------------------------------------------
+    def loadHistoryData(self, dbName, symbol, start, end):
+        """"""
+        # 首先检查是否有缓存，如果有则直接返回
+        history = self.historyDict.get((dbName, symbol, start, end), None)
+        if history:
+            print(u'找到内存缓存：%s %s %s %s' %(dbName, symbol, start, end))
+            return history
+        
+        # 否则从数据库加载
+        collection = self.dbClient[dbName][symbol]
+        
+        if end:
+            flt = {'datetime':{'$gte':start, '$lt':end}}        
+        else:
+            flt = {'datetime':{'$gte':start}}        
+            
+        cx = collection.find(flt).sort('datetime')
+        history = [d for d in cx]
+        
+        self.historyDict[(dbName, symbol, start, end)] = history
+        print(u'从数据库加载：%s %s %s %s' %(dbName, symbol, start, end))
+        return history
+
+    
+#----------------------------------------------------------------------
+def runHistoryDataServer():
+    """"""
+    repAddress = 'tcp://*:5555'
+    pubAddress = 'tcp://*:7777'
+
+    hds = HistoryDataServer(repAddress, pubAddress)
+    hds.start()
+
+    print(u'按任意键退出')
+    hds.stop()
+    raw_input()
+
+
 #----------------------------------------------------------------------
 def formatNumber(n):
     """格式化数字到字符串"""
@@ -1225,10 +1388,12 @@ def optimize(strategyClass, setting, targetName,
     
     engine.initStrategy(strategyClass, setting)
     engine.runBacktesting()
-    d = engine.calculateBacktestingResult()
+    
+    engine.calculateDailyResult()
+    d, result = engine.calculateDailyStatistics()            
     try:
-        targetValue = d[targetName]
+        targetValue = result[targetName]
     except KeyError:
-        targetValue = 0            
-    return (str(setting), targetValue)    
+        targetValue = 0       
+    return (str(setting), targetValue, result)    
     

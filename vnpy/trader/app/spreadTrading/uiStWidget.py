@@ -2,6 +2,8 @@
 
 from collections import OrderedDict
 
+from six import text_type
+
 from vnpy.event import Event
 from vnpy.trader.uiQt import QtWidgets, QtCore
 from vnpy.trader.uiBasicWidget import (BasicMonitor, BasicCell, PnlCell,
@@ -141,7 +143,16 @@ class StBuyPriceSpinBox(QtWidgets.QDoubleSpinBox):
     def setPrice(self, value):
         """设置价格"""
         self.algoEngine.setAlgoBuyPrice(self.spreadName, value)
-    
+   
+    #----------------------------------------------------------------------
+    def algoActiveChanged(self, active):
+        """算法运行状态改变"""
+        # 只允许算法停止时修改运行模式
+        if active:
+            self.setEnabled(False)
+        else:
+            self.setEnabled(True)    
+
 
 ########################################################################
 class StSellPriceSpinBox(QtWidgets.QDoubleSpinBox):
@@ -165,6 +176,15 @@ class StSellPriceSpinBox(QtWidgets.QDoubleSpinBox):
     def setPrice(self, value):
         """设置价格"""
         self.algoEngine.setAlgoSellPrice(self.spreadName, value)
+    
+    #----------------------------------------------------------------------
+    def algoActiveChanged(self, active):
+        """算法运行状态改变"""
+        # 只允许算法停止时修改运行模式
+        if active:
+            self.setEnabled(False)
+        else:
+            self.setEnabled(True)
 
 
 ########################################################################
@@ -190,6 +210,15 @@ class StShortPriceSpinBox(QtWidgets.QDoubleSpinBox):
         """设置价格"""
         self.algoEngine.setAlgoShortPrice(self.spreadName, value)
 
+    #----------------------------------------------------------------------
+    def algoActiveChanged(self, active):
+        """算法运行状态改变"""
+        # 只允许算法停止时修改运行模式
+        if active:
+            self.setEnabled(False)
+        else:
+            self.setEnabled(True)
+
 
 ########################################################################
 class StCoverPriceSpinBox(QtWidgets.QDoubleSpinBox):
@@ -214,6 +243,15 @@ class StCoverPriceSpinBox(QtWidgets.QDoubleSpinBox):
         """设置价格"""
         self.algoEngine.setAlgoCoverPrice(self.spreadName, value)
     
+    #----------------------------------------------------------------------
+    def algoActiveChanged(self, active):
+        """算法运行状态改变"""
+        # 只允许算法停止时修改运行模式
+        if active:
+            self.setEnabled(False)
+        else:
+            self.setEnabled(True)    
+
 
 ########################################################################
 class StMaxPosSizeSpinBox(QtWidgets.QSpinBox):
@@ -237,7 +275,16 @@ class StMaxPosSizeSpinBox(QtWidgets.QSpinBox):
         """设置价格"""
         self.algoEngine.setAlgoMaxPosSize(self.spreadName, size)
 
-
+    #----------------------------------------------------------------------
+    def algoActiveChanged(self, active):
+        """算法运行状态改变"""
+        # 只允许算法停止时修改运行模式
+        if active:
+            self.setEnabled(False)
+        else:
+            self.setEnabled(True)
+            
+            
 ########################################################################
 class StMaxOrderSizeSpinBox(QtWidgets.QSpinBox):
     """"""
@@ -259,6 +306,15 @@ class StMaxOrderSizeSpinBox(QtWidgets.QSpinBox):
     def setSize(self, size):
         """设置价格"""
         self.algoEngine.setAlgoMaxOrderSize(self.spreadName, size)    
+
+    #----------------------------------------------------------------------
+    def algoActiveChanged(self, active):
+        """算法运行状态改变"""
+        # 只允许算法停止时修改运行模式
+        if active:
+            self.setEnabled(False)
+        else:
+            self.setEnabled(True)
 
 
 ########################################################################
@@ -284,7 +340,7 @@ class StModeComboBox(QtWidgets.QComboBox):
     #----------------------------------------------------------------------
     def setMode(self):
         """设置模式"""
-        mode = unicode(self.currentText())
+        mode = text_type(self.currentText())
         self.algoEngine.setAlgoMode(self.spreadName, mode)
     
     #----------------------------------------------------------------------
@@ -359,6 +415,7 @@ class StActiveButton(QtWidgets.QPushButton):
 ########################################################################
 class StAlgoManager(QtWidgets.QTableWidget):
     """价差算法管理组件"""
+    signalPos = QtCore.pyqtSignal(type(Event()))
 
     #----------------------------------------------------------------------
     def __init__(self, stEngine, parent=None):
@@ -366,16 +423,20 @@ class StAlgoManager(QtWidgets.QTableWidget):
         super(StAlgoManager, self).__init__(parent)
         
         self.algoEngine = stEngine.algoEngine
+        self.eventEngine = stEngine.eventEngine
         
         self.buttonActiveDict = {}       # spreadName: buttonActive
+        self.posCellDict = {}               # spreadName: cell
         
         self.initUi()
+        self.registerEvent()
         
     #----------------------------------------------------------------------
     def initUi(self):
         """初始化表格"""
         headers = [u'价差',
                    u'算法',
+                   u'净持仓',
                    'BuyPrice',
                    'SellPrice',
                    'CoverPrice',
@@ -386,8 +447,12 @@ class StAlgoManager(QtWidgets.QTableWidget):
                    u'状态']
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
-        self.horizontalHeader().setResizeMode(QtWidgets.QHeaderView.Stretch)
         
+        try:
+            self.horizontalHeader().setResizeMode(QtWidgets.QHeaderView.Stretch)
+        except AttributeError:
+            self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+            
         self.verticalHeader().setVisible(False)
         self.setEditTriggers(self.NoEditTriggers)
         
@@ -402,6 +467,7 @@ class StAlgoManager(QtWidgets.QTableWidget):
         for row, d in enumerate(l):            
             cellSpreadName = QtWidgets.QTableWidgetItem(d['spreadName'])
             cellAlgoName = QtWidgets.QTableWidgetItem(d['algoName'])
+            cellNetPos = QtWidgets.QTableWidgetItem('0')
             spinBuyPrice = StBuyPriceSpinBox(algoEngine, d['spreadName'], d['buyPrice'])
             spinSellPrice = StSellPriceSpinBox(algoEngine, d['spreadName'], d['sellPrice'])
             spinShortPrice = StShortPriceSpinBox(algoEngine, d['spreadName'], d['shortPrice'])
@@ -413,24 +479,47 @@ class StAlgoManager(QtWidgets.QTableWidget):
             
             self.setItem(row, 0, cellSpreadName)
             self.setItem(row, 1, cellAlgoName)
-            self.setCellWidget(row, 2, spinBuyPrice)
-            self.setCellWidget(row, 3, spinSellPrice)
-            self.setCellWidget(row, 4, spinCoverPrice)
-            self.setCellWidget(row, 5, spinShortPrice)
-            self.setCellWidget(row, 6, spinMaxOrderSize)
-            self.setCellWidget(row, 7, spinMaxPosSize)
-            self.setCellWidget(row, 8, comboMode)
-            self.setCellWidget(row, 9, buttonActive)
+            self.setItem(row, 2, cellNetPos)
+            self.setCellWidget(row, 3, spinBuyPrice)
+            self.setCellWidget(row, 4, spinSellPrice)
+            self.setCellWidget(row, 5, spinCoverPrice)
+            self.setCellWidget(row, 6, spinShortPrice)
+            self.setCellWidget(row, 7, spinMaxOrderSize)
+            self.setCellWidget(row, 8, spinMaxPosSize)
+            self.setCellWidget(row, 9, comboMode)
+            self.setCellWidget(row, 10, buttonActive)
             
+            buttonActive.signalActive.connect(spinBuyPrice.algoActiveChanged)
+            buttonActive.signalActive.connect(spinSellPrice.algoActiveChanged)
+            buttonActive.signalActive.connect(spinShortPrice.algoActiveChanged)
+            buttonActive.signalActive.connect(spinCoverPrice.algoActiveChanged)
+            buttonActive.signalActive.connect(spinMaxOrderSize.algoActiveChanged)
+            buttonActive.signalActive.connect(spinMaxPosSize.algoActiveChanged)
             buttonActive.signalActive.connect(comboMode.algoActiveChanged)
             
             self.buttonActiveDict[d['spreadName']] = buttonActive
+            self.posCellDict[d['spreadName']] = cellNetPos
             
     #----------------------------------------------------------------------
     def stopAll(self):
         """停止所有算法"""
         for button in self.buttonActiveDict.values():
             button.stop()     
+    
+    #----------------------------------------------------------------------
+    def processStPosEvent(self, event):
+        """"""
+        pos = event.dict_['data']
+        cell = self.posCellDict[pos.name]
+        cell.setText(str(pos.netPos))
+    
+    #----------------------------------------------------------------------
+    def registerEvent(self):
+        """"""
+        self.signalPos.connect(self.processStPosEvent)
+        
+        self.eventEngine.register(EVENT_SPREADTRADING_POS, self.signalPos.emit)
+        
 
 
 ########################################################################

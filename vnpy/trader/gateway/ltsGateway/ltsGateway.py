@@ -3,6 +3,7 @@
 '''
 vn.lts的gateway接入
 '''
+from __future__ import print_function
 
 import os
 import json
@@ -77,7 +78,7 @@ class LtsGateway(VtGateway):
         """连接"""
         # 载入json 文件
         try:
-            f = file(self.filePath)
+            f = open(self.filePath)
         except IOError:
             log = VtLogData()
             log.gatewayName = self.gatewayName
@@ -87,6 +88,7 @@ class LtsGateway(VtGateway):
         
         # 解析json文件
         setting = json.load(f)
+        f.close()
         try:
             userID = str(setting['userID'])
             mdPassword = str(setting['mdPassword'])
@@ -980,7 +982,7 @@ class LtsQryApi(QryApi):
         elif data['ProductClass'] == '8':
             contract.productClass = PRODUCT_EQUITY
         else:
-            print data['ProductClass']
+            print(data['ProductClass'])
         
         # 期权类型
         if data['InstrumentType'] == '1':

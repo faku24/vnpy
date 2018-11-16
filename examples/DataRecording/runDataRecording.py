@@ -1,19 +1,30 @@
 # encoding: UTF-8
 
+from __future__ import print_function
 import multiprocessing
 from time import sleep
 from datetime import datetime, time
 
 from vnpy.event import EventEngine2
-from vnpy.trader.vtEvent import EVENT_LOG
+from vnpy.trader.vtEvent import EVENT_LOG, EVENT_ERROR
 from vnpy.trader.vtEngine import MainEngine, LogEngine
 from vnpy.trader.gateway import ctpGateway
 from vnpy.trader.app import dataRecorder
 
+
+#----------------------------------------------------------------------
+def processErrorEvent(event):
+    """
+    处理错误事件
+    错误信息在每次登陆后，会将当日所有已产生的均推送一遍，所以不适合写入日志
+    """
+    error = event.dict_['data']
+    print(u'错误代码：%s，错误信息：%s' %(error.errorID, error.errorMsg))
+
 #----------------------------------------------------------------------
 def runChildProcess():
     """子进程运行函数"""
-    print '-'*20
+    print('-'*20)
 
     # 创建日志引擎
     le = LogEngine()
@@ -30,6 +41,7 @@ def runChildProcess():
     le.info(u'主引擎创建成功')
 
     ee.register(EVENT_LOG, le.processLogEvent)
+    ee.register(EVENT_ERROR, processErrorEvent)
     le.info(u'注册日志事件监听')
 
     me.connect('CTP')

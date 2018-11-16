@@ -10,16 +10,18 @@ import json
 import csv
 import os
 import copy
+import traceback
 from collections import OrderedDict
-from datetime import datetime, timedelta
-from Queue import Queue, Empty
+from datetime import datetime, timedelta, time
+from queue import Queue, Empty
 from threading import Thread
+from pymongo.errors import DuplicateKeyError
 
 from vnpy.event import Event
 from vnpy.trader.vtEvent import *
 from vnpy.trader.vtFunction import todayDate, getJsonPath
 from vnpy.trader.vtObject import VtSubscribeReq, VtLogData, VtBarData, VtTickData
-from vnpy.trader.app.ctaStrategy.ctaTemplate import BarManager
+from vnpy.trader.vtUtility import BarGenerator
 
 from .drBase import *
 from .language import text
@@ -48,7 +50,7 @@ class DrEngine(object):
         self.tickSymbolSet = set()
         
         # K线合成器字典
-        self.bmDict = {}
+        self.bgDict = {}
         
         # 配置字典
         self.settingDict = OrderedDict()
@@ -57,6 +59,11 @@ class DrEngine(object):
         self.active = False                     # 工作状态
         self.queue = Queue()                    # 队列
         self.thread = Thread(target=self.run)   # 线程
+        
+        # 收盘相关
+        self.marketCloseTime = None             # 收盘时间
+        self.timerCount = 0                     # 定时器计数
+        self.lastTimerTime = None               # 上一次记录时间
         
         # 载入设置，订阅行情
         self.loadSetting()
@@ -77,6 +84,11 @@ class DrEngine(object):
             working = drSetting['working']
             if not working:
                 return
+            
+            # 加载收盘时间
+            if 'marketCloseTime' in drSetting:
+                timestamp = drSetting['marketCloseTime']
+                self.marketCloseTime = datetime.strptime(timestamp, '%H:%M:%S').time()
 
             # Tick记录配置
             if 'tick' in drSetting:
@@ -153,7 +165,7 @@ class DrEngine(object):
                         d['bar'] = True     
                         
                     # 创建BarManager对象
-                    self.bmDict[vtSymbol] = BarManager(self.onBar)
+                    self.bgDict[vtSymbol] = BarGenerator(self.onBar)
 
             # 主力合约记录配置
             if 'active' in drSetting:
@@ -173,14 +185,47 @@ class DrEngine(object):
         
         # 生成datetime对象
         if not tick.datetime:
-            tick.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')            
+            if '.' in tick.time:
+                tick.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S.%f')
+            else:
+                tick.datetime = datetime.strptime(' '.join([tick.date, tick.time]), '%Y%m%d %H:%M:%S')
 
         self.onTick(tick)
         
-        bm = self.bmDict.get(vtSymbol, None)
+        bm = self.bgDict.get(vtSymbol, None)
         if bm:
             bm.updateTick(tick)
+    
+    #----------------------------------------------------------------------
+    def processTimerEvent(self, event):
+        """处理定时事件"""
+        # 如果没有设置收盘时间，则无需处理
+        if not self.marketCloseTime:
+            return
         
+        # 10秒检查一次
+        self.timerCount += 1
+        if self.timerCount < 10:
+            return
+        self.timerCount = 0
+        
+        # 获取当前时间
+        currentTime = datetime.now().time()
+        
+        if not self.lastTimerTime:
+            self.lastTimerTime = currentTime
+            return
+        
+        # 上一个时间戳尚未到收盘时间，且当前时间戳已经到收盘时间
+        if (self.lastTimerTime < self.marketCloseTime and
+            currentTime >= self.marketCloseTime):
+            # 强制所有的K线生成器立即完成K线
+            for bg in self.bgDict.values():
+                bg.generate()
+        
+        # 记录新的时间
+        self.lastTimerTime = currentTime
+    
     #----------------------------------------------------------------------
     def onTick(self, tick):
         """Tick更新"""
@@ -222,6 +267,7 @@ class DrEngine(object):
     def registerEvent(self):
         """注册事件监听"""
         self.eventEngine.register(EVENT_TICK, self.procecssTickEvent)
+        self.eventEngine.register(EVENT_TIMER, self.processTimerEvent)
  
     #----------------------------------------------------------------------
     def insertData(self, dbName, collectionName, data):
@@ -234,8 +280,17 @@ class DrEngine(object):
         while self.active:
             try:
                 dbName, collectionName, d = self.queue.get(block=True, timeout=1)
-                flt = {'datetime': d['datetime']}
-                self.mainEngine.dbUpdate(dbName, collectionName, d, flt, True)
+                
+                # 这里采用MongoDB的update模式更新数据，在记录tick数据时会由于查询
+                # 过于频繁，导致CPU占用和硬盘读写过高后系统卡死，因此不建议使用
+                #flt = {'datetime': d['datetime']}
+                #self.mainEngine.dbUpdate(dbName, collectionName, d, flt, True)
+                
+                # 使用insert模式更新数据，可能存在时间戳重复的情况，需要用户自行清洗
+                try:
+                    self.mainEngine.dbInsert(dbName, collectionName, d)
+                except DuplicateKeyError:
+                    self.writeDrLog(u'键值重复插入失败，报错信息：%s' %traceback.format_exc())
             except Empty:
                 pass
             

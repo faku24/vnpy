@@ -21,7 +21,7 @@ from __future__ import division
 from vnpy.trader.vtObject import VtBarData
 from vnpy.trader.vtConstant import EMPTY_STRING
 from vnpy.trader.app.ctaStrategy.ctaTemplate import (CtaTemplate, 
-                                                     BarManager, 
+                                                     BarGenerator, 
                                                      ArrayManager)
 
 
@@ -76,15 +76,20 @@ class BollChannelStrategy(CtaTemplate):
                'intraTradeLow',
                'longStop',
                'shortStop']  
+    
+    # 同步列表，保存了需要保存到数据库的变量名称
+    syncList = ['pos',
+                'intraTradeHigh',
+                'intraTradeLow']    
 
     #----------------------------------------------------------------------
     def __init__(self, ctaEngine, setting):
         """Constructor"""
         super(BollChannelStrategy, self).__init__(ctaEngine, setting)
         
-        self.bm = BarManager(self.onBar, 15, self.onXminBar)        # 创建K线合成器对象
+        self.bg = BarGenerator(self.onBar, 15, self.onXminBar)        # 创建K线合成器对象
         self.am = ArrayManager()
-        
+            
     #----------------------------------------------------------------------
     def onInit(self):
         """初始化策略（必须由用户继承实现）"""
@@ -112,12 +117,12 @@ class BollChannelStrategy(CtaTemplate):
     #----------------------------------------------------------------------
     def onTick(self, tick):
         """收到行情TICK推送（必须由用户继承实现）""" 
-        self.bm.updateTick(tick)
+        self.bg.updateTick(tick)
 
     #----------------------------------------------------------------------
     def onBar(self, bar):
         """收到Bar推送（必须由用户继承实现）"""
-        self.bm.updateBar(bar)
+        self.bg.updateBar(bar)
     
     #----------------------------------------------------------------------
     def onXminBar(self, bar):
@@ -166,6 +171,9 @@ class BollChannelStrategy(CtaTemplate):
             self.shortStop = self.intraTradeLow + self.atrValue * self.slMultiplier
             
             self.cover(self.shortStop, abs(self.pos), True)
+            
+        # 同步数据到数据库
+        self.saveSyncData()        
     
         # 发出状态更新事件
         self.putEvent()        
@@ -177,6 +185,7 @@ class BollChannelStrategy(CtaTemplate):
 
     #----------------------------------------------------------------------
     def onTrade(self, trade):
+        """成交推送"""
         # 发出状态更新事件
         self.putEvent()
 
