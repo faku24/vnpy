@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from logging import INFO
 
+from .constant import (STATUS_SUBMITTING, STATUS_NOTTRADED, STATUS_PARTTRADED)
+
+ACTIVE_STATUSES = set([STATUS_SUBMITTING, STATUS_NOTTRADED, STATUS_PARTTRADED])
+
 
 @dataclass
 class BaseData:
@@ -27,8 +31,8 @@ class TickData(BaseData):
     symbol: str
     exchange: str
     datetime: datetime
-    volume: float = 0
 
+    volume: float = 0
     last_price: float = 0
     last_volume: float = 0
 
@@ -110,6 +114,26 @@ class OrderData(BaseData):
         self.vt_symbol = f"{self.symbol}.{self.exchange}"
         self.vt_orderid = f"{self.gateway_name}.{self.orderid}"
 
+    def is_active(self):
+        """
+        Check if the order is active.
+        """
+        if self.status in ACTIVE_STATUSES:
+            return True
+        else:
+            return False
+
+    def create_cancel_request(self):
+        """
+        Create cancel request object from order.
+        """
+        req = CancelRequest(
+            orderid=self.orderid,
+            symbol=self.symbol,
+            exchange=self.exchange
+        )
+        return req
+
 
 @dataclass
 class TradeData(BaseData):
@@ -182,7 +206,7 @@ class LogData(BaseData):
 
     def __post_init__(self):
         """"""
-        time = datetime
+        self.time = datetime.now()
 
 
 @dataclass
