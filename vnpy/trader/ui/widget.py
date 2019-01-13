@@ -12,12 +12,13 @@ from ..constant import (DIRECTION_LONG, DIRECTION_SHORT, DIRECTION_NET,
                         OFFSET_OPEN, OFFSET_CLOSE, OFFSET_CLOSETODAY, OFFSET_CLOSEYESTERDAY,
                         PRICETYPE_LIMIT, PRICETYPE_MARKET, PRICETYPE_FAK, PRICETYPE_FOK,
                         EXCHANGE_CFFEX, EXCHANGE_SHFE, EXCHANGE_DCE, EXCHANGE_CZCE, EXCHANGE_SSE,
-                        EXCHANGE_SZSE, EXCHANGE_SGE, EXCHANGE_HKEX, EXCHANGE_HKFE, EXCHANGE_SMART,
+                        EXCHANGE_SZSE, EXCHANGE_SGE, EXCHANGE_SEHK, EXCHANGE_HKFE, EXCHANGE_SMART,
                         EXCHANGE_ICE, EXCHANGE_CME, EXCHANGE_NYMEX, EXCHANGE_GLOBEX, EXCHANGE_IDEALPRO)
 from ..engine import MainEngine
 from ..event import (EVENT_TICK, EVENT_ORDER, EVENT_TRADE, EVENT_ACCOUNT,
                      EVENT_POSITION, EVENT_CONTRACT, EVENT_LOG)
 from ..object import SubscribeRequest, OrderRequest, CancelRequest
+from ..utility import load_setting, save_setting
 
 COLOR_LONG = QtGui.QColor("red")
 COLOR_SHORT = QtGui.QColor("green")
@@ -309,6 +310,11 @@ class TickMonitor(BaseMonitor):
             "cell": BaseCell,
             "update": False
         },
+        "exchange": {
+            "display": "交易所",
+            "cell": BaseCell,
+            "update": False
+        },
         "last_price": {
             "display": "最新价",
             "cell": BaseCell,
@@ -418,6 +424,11 @@ class TradeMonitor(BaseMonitor):
             "cell": BaseCell,
             "update": False
         },
+        "exchange": {
+            "display": "交易所",
+            "cell": BaseCell,
+            "update": False
+        },
         "direction": {
             "display": "方向",
             "cell": DirectionCell,
@@ -462,6 +473,11 @@ class OrderMonitor(BaseMonitor):
         },
         "symbol": {
             "display": "代码",
+            "cell": BaseCell,
+            "update": False
+        },
+        "exchange": {
+            "display": "交易所",
             "cell": BaseCell,
             "update": False
         },
@@ -539,6 +555,11 @@ class PositionMonitor(BaseMonitor):
             "cell": BaseCell,
             "update": False
         },
+        "exchange": {
+            "display": "交易所",
+            "cell": BaseCell,
+            "update": False
+        },
         "direction": {
             "display": "方向",
             "cell": DirectionCell,
@@ -613,15 +634,16 @@ class ConnectDialog(QtWidgets.QDialog):
     """
     Start connection of a certain gateway.
     """
-
+    
     def __init__(self, main_engine: MainEngine, gateway_name: str):
         """"""
         super(ConnectDialog, self).__init__()
 
         self.main_engine = main_engine
         self.gateway_name = gateway_name
+        self.file_name = f"Connect{gateway_name}.vt"
 
-        self.line_edits = {}
+        self.widgets = {}
 
         self.init_ui()
     
@@ -629,16 +651,35 @@ class ConnectDialog(QtWidgets.QDialog):
         """"""
         self.setWindowTitle(f"连接{self.gateway_name}")
 
-        form = QtWidgets.QFormLayout()
+        # Default setting provides field name, field data type and field default value.
         default_setting = self.main_engine.get_default_setting(self.gateway_name)
+
+        # Saved setting provides field data used last time.
+        loaded_setting = load_setting(self.file_name)
         
-        # Initialize line edits and form layout based on default setting.
+        # Initialize line edits and form layout based on setting.
+        form = QtWidgets.QFormLayout()
+
         for field_name, field_value in default_setting.items():
             field_type = type(field_value)
-            line_edit = QtWidgets.QLineEdit(str(field_value))
 
-            form.addRow(f"{field_name} <{field_type.__name__}>", line_edit)
-            self.line_edits[field_name] = (line_edit, field_type)
+            if field_type == list:
+                widget = QtWidgets.QComboBox()
+                widget.addItems(field_value)
+
+                if field_name in loaded_setting:
+                    saved_value = loaded_setting[field_name]
+                    ix = widget.findText(saved_value)
+                    widget.setCurrentIndex(ix)
+            else:
+                widget = QtWidgets.QLineEdit(str(field_value))
+
+                if field_name in loaded_setting:
+                    saved_value = loaded_setting[field_name]
+                    widget.setText(str(saved_value))
+
+            form.addRow(f"{field_name} <{field_type.__name__}>", widget)
+            self.widgets[field_name] = (widget, field_type)
 
         button = QtWidgets.QPushButton(u"连接")
         button.clicked.connect(self.connect)
@@ -651,13 +692,20 @@ class ConnectDialog(QtWidgets.QDialog):
         Get setting value from line edits and connect the gateway.
         """
         setting = {}
-        for field_name, tp in self.line_edits.items():
-            line_edit, field_type = tp
-            field_value = field_type(line_edit.text())
+        for field_name, tp in self.widgets.items():
+            widget, field_type = tp
+            if field_type == list:
+                field_value = str(widget.currentText())
+            else:
+                field_value = field_type(widget.text())
             setting[field_name] = field_value
         
         self.main_engine.connect(setting, self.gateway_name)
+        
+        save_setting(self.file_name, setting)
+
         self.accept()
+    
 
 
 class TradingWidget(QtWidgets.QWidget):
@@ -692,7 +740,7 @@ class TradingWidget(QtWidgets.QWidget):
             EXCHANGE_CZCE,
             EXCHANGE_SSE,
             EXCHANGE_SZSE,
-            EXCHANGE_HKEX,
+            EXCHANGE_SEHK,
             EXCHANGE_HKFE,
             EXCHANGE_SMART,
             EXCHANGE_ICE,
