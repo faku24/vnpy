@@ -25,6 +25,7 @@ from .object import LogData, SubscribeRequest, OrderRequest, CancelRequest
 from .utility import Singleton, get_temp_path
 from .setting import SETTINGS
 from .gateway import BaseGateway
+from .app import BaseApp
 
 
 class MainEngine:
@@ -59,6 +60,15 @@ class MainEngine:
         """
         gateway = gateway_class(self.event_engine)
         self.gateways[gateway.gateway_name] = gateway
+
+    def add_app(self, app_class: BaseApp):
+        """
+        Add app.
+        """
+        app = app_class()
+        self.apps[app.app_name] = app
+
+        self.add_engine(app.engine_class)
 
     def init_engines(self):
         """
@@ -101,6 +111,12 @@ class MainEngine:
         """
         return list(self.gateways.keys())
 
+    def get_all_apps(self):
+        """
+        Get all app objects.
+        """
+        return list(self.apps.values())
+
     def connect(self, setting: dict, gateway_name: str):
         """
         Start connection of a specific gateway.
@@ -140,13 +156,14 @@ class MainEngine:
         Make sure every gateway and app is closed properly before
         programme exit.
         """
+        # Stop event engine first to prevent new timer event.
+        self.event_engine.stop()
+
         for engine in self.engines.values():
             engine.close()
 
         for gateway in self.gateways.values():
             gateway.close()
-
-        self.event_engine.stop()
 
 
 class BaseEngine(ABC):

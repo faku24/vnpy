@@ -5,8 +5,6 @@ General utility functions.
 import shelve
 from pathlib import Path
 
-from .constant import (STATUS_NOTTRADED, STATUS_PARTTRADED, STATUS_SUBMITTING)
-
 
 class Singleton(type):
     """
@@ -21,7 +19,7 @@ class Singleton(type):
     def __call__(cls, *args, **kwargs):
         """"""
         if cls not in cls._instances:
-            cls._instances[cls] = super(VtSingleton,
+            cls._instances[cls] = super(Singleton,
                                         cls).__call__(*args,
                                                       **kwargs)
 
