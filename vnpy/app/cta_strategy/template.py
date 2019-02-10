@@ -1,9 +1,9 @@
 """"""
-
 from abc import ABC
+from typing import Any, Callable
 
-from vnpy.trader.engine import BaseEngine
-from vnpy.trader.object import TickData, OrderData, TradeData, BarData
+from vnpy.trader.constant import Interval
+from vnpy.trader.object import BarData, TickData, OrderData, TradeData
 
 from .base import CtaOrderType, StopOrder
 
@@ -11,25 +11,81 @@ from .base import CtaOrderType, StopOrder
 class CtaTemplate(ABC):
     """"""
 
-    _inited = False
-    _trading = False
-    _pos = 0
-
     author = ""
-    vt_symbol = ""
-
     parameters = []
     variables = []
 
-    def __init__(self, engine: BaseEngine, setting: dict):
+    def __init__(
+        self,
+        cta_engine: Any,
+        strategy_name: str,
+        vt_symbol: str,
+        setting: dict,
+    ):
         """"""
-        self.engine = engine
+        self.cta_engine = cta_engine
+        self.strategy_name = strategy_name
+        self.vt_symbol = vt_symbol
 
-        self.vt_symbol = setting["vt_symbol"]
+        self.inited = False
+        self.trading = False
+        self.pos = 0
 
+        self.variables.insert(0, "inited")
+        self.variables.insert(1, "trading")
+        self.variables.insert(2, "pos")
+
+        self.update_setting(setting)
+
+    def update_setting(self, setting: dict):
+        """
+        Update strategy parameter wtih value in setting dict.
+        """
         for name in self.parameters:
             if name in setting:
                 setattr(self, name, setting[name])
+
+    @classmethod
+    def get_class_parameters(cls):
+        """
+        Get default parameters dict of strategy class.
+        """
+        class_parameters = {}
+        for name in cls.parameters:
+            class_parameters[name] = getattr(cls, name)
+        return class_parameters
+
+    def get_parameters(self):
+        """
+        Get strategy parameters dict.
+        """
+        strategy_parameters = {}
+        for name in self.parameters:
+            strategy_parameters[name] = getattr(self, name)
+        return strategy_parameters
+
+    def get_variables(self):
+        """
+        Get strategy variables dict.
+        """
+        strategy_variables = {}
+        for name in self.variables:
+            strategy_variables[name] = getattr(self, name)
+        return strategy_variables
+
+    def get_data(self):
+        """
+        Get strategy data.
+        """
+        strategy_data = {
+            "strategy_name": self.strategy_name,
+            "vt_symbol": self.vt_symbol,
+            "class_name": self.__class__.__name__,
+            "author": self.author,
+            "parameters": self.get_parameters(),
+            "variables": self.get_variables(),
+        }
+        return strategy_data
 
     def on_init(self):
         """
@@ -43,9 +99,21 @@ class CtaTemplate(ABC):
         """
         pass
 
+    def on_stop(self):
+        """
+        Callback when strategy is stopped.
+        """
+        pass
+
     def on_tick(self, tick: TickData):
         """
         Callback of new tick data update.
+        """
+        pass
+
+    def on_bar(self, bar: BarData):
+        """
+        Callback of new bar data update.
         """
         pass
 
@@ -64,12 +132,6 @@ class CtaTemplate(ABC):
     def on_stop_order(self, stop_order: StopOrder):
         """
         Callback of stop order update.
-        """
-        pass
-
-    def on_bar(self, bar: BarData):
-        """
-        Callback of new bar data update.
         """
         pass
 
@@ -98,43 +160,69 @@ class CtaTemplate(ABC):
         return self.send_order(CtaOrderType.COVER, price, volume, stop)
 
     def send_order(
-            self,
-            order_type: CtaOrderType,
-            price: float,
-            volume: float,
-            stop: bool = False
+        self,
+        order_type: CtaOrderType,
+        price: float,
+        volume: float,
+        stop: bool = False,
     ):
         """
         Send a new order.
         """
-        return self.engine.send_order(self, order_type, price, volume, stop)
+        if self.trading:
+            vt_orderid = self.cta_engine.send_order(
+                self, order_type, price, volume, stop
+            )
+        else:
+            vt_orderid = ""
+        return vt_orderid
 
-    def cancel_order(self, vt_orderid):
+    def cancel_order(self, vt_orderid: str):
         """
         Cancel an existing order.
         """
-        self.engine.cancel_order(vt_orderid)
+        self.cta_engine.cancel_order(self, vt_orderid)
 
     def cancel_all(self):
         """
         Cancel all orders sent by strategy.
         """
-        self.engine.cancel_all(self)
+        self.cta_engine.cancel_all(self)
 
-    def write_log(self, msg):
+    def write_log(self, msg: str):
         """
         Write a log message.
         """
-        self.engine.write_log(self, msg)
+        self.cta_engine.write_log(self, msg)
 
     def get_engine_type(self):
         """
-        Return whether the engine is backtesting or live trading.
+        Return whether the cta_engine is backtesting or live trading.
         """
-        return self.engine.get_engine_type()
+        return self.cta_engine.get_engine_type()
 
-    def get_pos(self):
+    def load_bar(
+        self,
+        days: int,
+        interval: Interval = Interval.MINUTE,
+        callback: Callable = None,
+    ):
         """
-        Return current net position of the strategy.
+        Load historical bar data for initializing strategy.
         """
-        return self._pos
+        if not callback:
+            callback = self.on_bar
+
+        self.cta_engine.load_bar(self.vt_symbol, days, interval, callback)
+
+    def load_tick(self, days: int):
+        """
+        Load historical tick data for initializing strategy.
+        """
+        self.cta_engine.load_tick(self.vt_symbol, days, self.on_tick)
+
+    def put_event(self):
+        """
+        Put an strategy data event for ui update.
+        """
+        self.cta_engine.put_strategy_event(self)

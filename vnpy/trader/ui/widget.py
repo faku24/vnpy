@@ -3,24 +3,23 @@ Basic widgets for VN Trader.
 """
 
 import csv
-from typing import Any
 from enum import Enum
+from typing import Any
 
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5 import QtCore, QtGui, QtWidgets
 
-from vnpy.event import EventEngine, Event
-from ..constant import Direction, Offset, PriceType, Exchange
+from vnpy.event import Event, EventEngine
+from ..constant import Direction, Exchange, Offset, PriceType
 from ..engine import MainEngine
 from ..event import (
     EVENT_TICK,
-    EVENT_ORDER,
     EVENT_TRADE,
-    EVENT_ACCOUNT,
+    EVENT_ORDER,
     EVENT_POSITION,
-    EVENT_CONTRACT,
+    EVENT_ACCOUNT,
     EVENT_LOG
 )
-from ..object import SubscribeRequest, OrderRequest, CancelRequest
+from ..object import OrderRequest, SubscribeRequest
 from ..utility import load_setting, save_setting
 
 COLOR_LONG = QtGui.QColor("red")
@@ -164,6 +163,17 @@ class TimeCell(BaseCell):
         self._data = data
 
 
+class MsgCell(BaseCell):
+    """
+    Cell used for showing msg data.
+    """
+
+    def __init__(self, content: str, data: Any):
+        """"""
+        super(MsgCell, self).__init__(content, data)
+        self.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+
+
 class BaseMonitor(QtWidgets.QTableWidget):
     """
     Monitor data update in VN Trader.
@@ -288,22 +298,20 @@ class BaseMonitor(QtWidgets.QTableWidget):
         """
         Resize all columns according to contents.
         """
-        self.horizontalHeader().resizeSections(
-            QtWidgets.QHeaderView.ResizeToContents
-        )
+        self.horizontalHeader().resizeSections(QtWidgets.QHeaderView.ResizeToContents)
 
     def save_csv(self):
         """
         Save table data into a csv file
         """
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "保存数据", "",
-                                                        "CSV(*.csv)")
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "保存数据", "", "CSV(*.csv)")
 
         if not path:
             return
 
         with open(path, "w") as f:
-            writer = csv.writer(f, lineterminator='\n')
+            writer = csv.writer(f, lineterminator="\n")
 
             writer.writerow(self.headers.keys())
 
@@ -328,81 +336,26 @@ class TickMonitor(BaseMonitor):
     """
     Monitor for tick data.
     """
+
     event_type = EVENT_TICK
     data_key = "vt_symbol"
     sorting = True
 
     headers = {
-        "symbol": {
-            "display": "代码",
-            "cell": BaseCell,
-            "update": False
-        },
-        "exchange": {
-            "display": "交易所",
-            "cell": EnumCell,
-            "update": False
-        },
-        "name": {
-            "display": "名称",
-            "cell": BaseCell,
-            "update": True
-        },
-        "last_price": {
-            "display": "最新价",
-            "cell": BaseCell,
-            "update": True
-        },
-        "volume": {
-            "display": "成交量",
-            "cell": BaseCell,
-            "update": True
-        },
-        "open_price": {
-            "display": "开盘价",
-            "cell": BaseCell,
-            "update": True
-        },
-        "high_price": {
-            "display": "最高价",
-            "cell": BaseCell,
-            "update": True
-        },
-        "low_price": {
-            "display": "最低价",
-            "cell": BaseCell,
-            "update": True
-        },
-        "bid_price_1": {
-            "display": "买1价",
-            "cell": BidCell,
-            "update": True
-        },
-        "bid_volume_1": {
-            "display": "买1量",
-            "cell": BidCell,
-            "update": True
-        },
-        "ask_price_1": {
-            "display": "卖1价",
-            "cell": AskCell,
-            "update": True
-        },
-        "ask_volume_1": {
-            "display": "卖1量",
-            "cell": AskCell,
-            "update": True
-        },
-        "datetime": {
-            "display": "时间",
-            "cell": TimeCell,
-            "update": True
-        },
-        "gateway_name": {
-            "display": "接口",
-            "cell": BaseCell,
-            "update": False
-        }
+        "symbol": {"display": "代码", "cell": BaseCell, "update": False},
+        "exchange": {"display": "交易所", "cell": EnumCell, "update": False},
+        "name": {"display": "名称", "cell": BaseCell, "update": True},
+        "last_price": {"display": "最新价", "cell": BaseCell, "update": True},
+        "volume": {"display": "成交量", "cell": BaseCell, "update": True},
+        "open_price": {"display": "开盘价", "cell": BaseCell, "update": True},
+        "high_price": {"display": "最高价", "cell": BaseCell, "update": True},
+        "low_price": {"display": "最低价", "cell": BaseCell, "update": True},
+        "bid_price_1": {"display": "买1价", "cell": BidCell, "update": True},
+        "bid_volume_1": {"display": "买1量", "cell": BidCell, "update": True},
+        "ask_price_1": {"display": "卖1价", "cell": AskCell, "update": True},
+        "ask_volume_1": {"display": "卖1量", "cell": AskCell, "update": True},
+        "datetime": {"display": "时间", "cell": TimeCell, "update": True},
+        "gateway_name": {"display": "接口", "cell": BaseCell, "update": False},
     }
 
 
@@ -410,26 +363,15 @@ class LogMonitor(BaseMonitor):
     """
     Monitor for log data.
     """
+
     event_type = EVENT_LOG
     data_key = ""
     sorting = False
 
     headers = {
-        "time": {
-            "display": "时间",
-            "cell": TimeCell,
-            "update": False
-        },
-        "msg": {
-            "display": "信息",
-            "cell": BaseCell,
-            "update": False
-        },
-        "gateway_name": {
-            "display": "接口",
-            "cell": BaseCell,
-            "update": False
-        }
+        "time": {"display": "时间", "cell": TimeCell, "update": False},
+        "msg": {"display": "信息", "cell": MsgCell, "update": False},
+        "gateway_name": {"display": "接口", "cell": BaseCell, "update": False},
     }
 
 
@@ -437,61 +379,22 @@ class TradeMonitor(BaseMonitor):
     """
     Monitor for trade data.
     """
+
     event_type = EVENT_TRADE
     data_key = ""
     sorting = True
 
     headers = {
-        "tradeid": {
-            "display": "成交号 ",
-            "cell": BaseCell,
-            "update": False
-        },
-        "orderid": {
-            "display": "委托号",
-            "cell": BaseCell,
-            "update": False
-        },
-        "symbol": {
-            "display": "代码",
-            "cell": BaseCell,
-            "update": False
-        },
-        "exchange": {
-            "display": "交易所",
-            "cell": EnumCell,
-            "update": False
-        },
-        "direction": {
-            "display": "方向",
-            "cell": DirectionCell,
-            "update": False
-        },
-        "offset": {
-            "display": "开平",
-            "cell": EnumCell,
-            "update": False
-        },
-        "price": {
-            "display": "价格",
-            "cell": BaseCell,
-            "update": False
-        },
-        "volume": {
-            "display": "数量",
-            "cell": BaseCell,
-            "update": False
-        },
-        "time": {
-            "display": "时间",
-            "cell": BaseCell,
-            "update": False
-        },
-        "gateway_name": {
-            "display": "接口",
-            "cell": BaseCell,
-            "update": False
-        }
+        "tradeid": {"display": "成交号 ", "cell": BaseCell, "update": False},
+        "orderid": {"display": "委托号", "cell": BaseCell, "update": False},
+        "symbol": {"display": "代码", "cell": BaseCell, "update": False},
+        "exchange": {"display": "交易所", "cell": EnumCell, "update": False},
+        "direction": {"display": "方向", "cell": DirectionCell, "update": False},
+        "offset": {"display": "开平", "cell": EnumCell, "update": False},
+        "price": {"display": "价格", "cell": BaseCell, "update": False},
+        "volume": {"display": "数量", "cell": BaseCell, "update": False},
+        "time": {"display": "时间", "cell": BaseCell, "update": False},
+        "gateway_name": {"display": "接口", "cell": BaseCell, "update": False},
     }
 
 
@@ -499,66 +402,23 @@ class OrderMonitor(BaseMonitor):
     """
     Monitor for order data.
     """
+
     event_type = EVENT_ORDER
     data_key = "vt_orderid"
     sorting = True
 
     headers = {
-        "orderid": {
-            "display": "委托号",
-            "cell": BaseCell,
-            "update": False
-        },
-        "symbol": {
-            "display": "代码",
-            "cell": BaseCell,
-            "update": False
-        },
-        "exchange": {
-            "display": "交易所",
-            "cell": EnumCell,
-            "update": False
-        },
-        "direction": {
-            "display": "方向",
-            "cell": DirectionCell,
-            "update": False
-        },
-        "offset": {
-            "display": "开平",
-            "cell": EnumCell,
-            "update": False
-        },
-        "price": {
-            "display": "价格",
-            "cell": BaseCell,
-            "update": False
-        },
-        "volume": {
-            "display": "总数量",
-            "cell": BaseCell,
-            "update": True
-        },
-        "traded": {
-            "display": "已成交",
-            "cell": BaseCell,
-            "update": True
-        },
-        "status": {
-            "display": "状态",
-            "cell": EnumCell,
-            "update": True
-        },
-        "time": {
-            "display": "时间",
-            "cell": BaseCell,
-            "update": True
-        },
-        "gateway_name": {
-            "display": "接口",
-            "cell": BaseCell,
-            "update": False
-        }
+        "orderid": {"display": "委托号", "cell": BaseCell, "update": False},
+        "symbol": {"display": "代码", "cell": BaseCell, "update": False},
+        "exchange": {"display": "交易所", "cell": EnumCell, "update": False},
+        "direction": {"display": "方向", "cell": DirectionCell, "update": False},
+        "offset": {"display": "开平", "cell": EnumCell, "update": False},
+        "price": {"display": "价格", "cell": BaseCell, "update": False},
+        "volume": {"display": "总数量", "cell": BaseCell, "update": True},
+        "traded": {"display": "已成交", "cell": BaseCell, "update": True},
+        "status": {"display": "状态", "cell": EnumCell, "update": True},
+        "time": {"display": "时间", "cell": BaseCell, "update": True},
+        "gateway_name": {"display": "接口", "cell": BaseCell, "update": False},
     }
 
     def init_ui(self):
@@ -583,51 +443,20 @@ class PositionMonitor(BaseMonitor):
     """
     Monitor for position data.
     """
+
     event_type = EVENT_POSITION
     data_key = "vt_positionid"
     sorting = True
 
     headers = {
-        "symbol": {
-            "display": "代码",
-            "cell": BaseCell,
-            "update": False
-        },
-        "exchange": {
-            "display": "交易所",
-            "cell": EnumCell,
-            "update": False
-        },
-        "direction": {
-            "display": "方向",
-            "cell": DirectionCell,
-            "update": False
-        },
-        "volume": {
-            "display": "数量",
-            "cell": BaseCell,
-            "update": True
-        },
-        "frozen": {
-            "display": "冻结",
-            "cell": BaseCell,
-            "update": True
-        },
-        "price": {
-            "display": "均价",
-            "cell": BaseCell,
-            "update": False
-        },
-        "pnl": {
-            "display": "盈亏",
-            "cell": PnlCell,
-            "update": True
-        },
-        "gateway_name": {
-            "display": "接口",
-            "cell": BaseCell,
-            "update": False
-        }
+        "symbol": {"display": "代码", "cell": BaseCell, "update": False},
+        "exchange": {"display": "交易所", "cell": EnumCell, "update": False},
+        "direction": {"display": "方向", "cell": DirectionCell, "update": False},
+        "volume": {"display": "数量", "cell": BaseCell, "update": True},
+        "frozen": {"display": "冻结", "cell": BaseCell, "update": True},
+        "price": {"display": "均价", "cell": BaseCell, "update": False},
+        "pnl": {"display": "盈亏", "cell": PnlCell, "update": True},
+        "gateway_name": {"display": "接口", "cell": BaseCell, "update": False},
     }
 
 
@@ -635,36 +464,17 @@ class AccountMonitor(BaseMonitor):
     """
     Monitor for account data.
     """
+
     event_type = EVENT_ACCOUNT
     data_key = "vt_accountid"
     sorting = True
 
     headers = {
-        "accountid": {
-            "display": "账号",
-            "cell": BaseCell,
-            "update": False
-        },
-        "balance": {
-            "display": "余额",
-            "cell": BaseCell,
-            "update": True
-        },
-        "frozen": {
-            "display": "冻结",
-            "cell": BaseCell,
-            "update": True
-        },
-        "available": {
-            "display": "可用",
-            "cell": BaseCell,
-            "update": True
-        },
-        "gateway_name": {
-            "display": "接口",
-            "cell": BaseCell,
-            "update": False
-        }
+        "accountid": {"display": "账号", "cell": BaseCell, "update": False},
+        "balance": {"display": "余额", "cell": BaseCell, "update": True},
+        "frozen": {"display": "冻结", "cell": BaseCell, "update": True},
+        "available": {"display": "可用", "cell": BaseCell, "update": True},
+        "gateway_name": {"display": "接口", "cell": BaseCell, "update": False},
     }
 
 
@@ -691,8 +501,7 @@ class ConnectDialog(QtWidgets.QDialog):
 
         # Default setting provides field name, field data type and field default value.
         default_setting = self.main_engine.get_default_setting(
-            self.gateway_name
-        )
+            self.gateway_name)
 
         # Saved setting provides field data used last time.
         loaded_setting = load_setting(self.filename)
@@ -721,7 +530,7 @@ class ConnectDialog(QtWidgets.QDialog):
             form.addRow(f"{field_name} <{field_type.__name__}>", widget)
             self.widgets[field_name] = (widget, field_type)
 
-        button = QtWidgets.QPushButton(u"连接")
+        button = QtWidgets.QPushButton("连接")
         button.clicked.connect(self.connect)
         form.addRow(button)
 
@@ -782,17 +591,14 @@ class TradingWidget(QtWidgets.QWidget):
 
         self.direction_combo = QtWidgets.QComboBox()
         self.direction_combo.addItems(
-            [Direction.LONG.value,
-             Direction.SHORT.value]
-        )
+            [Direction.LONG.value, Direction.SHORT.value])
 
         self.offset_combo = QtWidgets.QComboBox()
         self.offset_combo.addItems([offset.value for offset in Offset])
 
         self.price_type_combo = QtWidgets.QComboBox()
         self.price_type_combo.addItems(
-            [price_type.value for price_type in PriceType]
-        )
+            [price_type.value for price_type in PriceType])
 
         double_validator = QtGui.QDoubleValidator()
         double_validator.setBottom(0)
@@ -836,25 +642,15 @@ class TradingWidget(QtWidgets.QWidget):
         self.bp5_label = self.create_label(bid_color)
 
         self.bv1_label = self.create_label(
-            bid_color,
-            alignment=QtCore.Qt.AlignRight
-        )
+            bid_color, alignment=QtCore.Qt.AlignRight)
         self.bv2_label = self.create_label(
-            bid_color,
-            alignment=QtCore.Qt.AlignRight
-        )
+            bid_color, alignment=QtCore.Qt.AlignRight)
         self.bv3_label = self.create_label(
-            bid_color,
-            alignment=QtCore.Qt.AlignRight
-        )
+            bid_color, alignment=QtCore.Qt.AlignRight)
         self.bv4_label = self.create_label(
-            bid_color,
-            alignment=QtCore.Qt.AlignRight
-        )
+            bid_color, alignment=QtCore.Qt.AlignRight)
         self.bv5_label = self.create_label(
-            bid_color,
-            alignment=QtCore.Qt.AlignRight
-        )
+            bid_color, alignment=QtCore.Qt.AlignRight)
 
         self.ap1_label = self.create_label(ask_color)
         self.ap2_label = self.create_label(ask_color)
@@ -863,25 +659,15 @@ class TradingWidget(QtWidgets.QWidget):
         self.ap5_label = self.create_label(ask_color)
 
         self.av1_label = self.create_label(
-            ask_color,
-            alignment=QtCore.Qt.AlignRight
-        )
+            ask_color, alignment=QtCore.Qt.AlignRight)
         self.av2_label = self.create_label(
-            ask_color,
-            alignment=QtCore.Qt.AlignRight
-        )
+            ask_color, alignment=QtCore.Qt.AlignRight)
         self.av3_label = self.create_label(
-            ask_color,
-            alignment=QtCore.Qt.AlignRight
-        )
+            ask_color, alignment=QtCore.Qt.AlignRight)
         self.av4_label = self.create_label(
-            ask_color,
-            alignment=QtCore.Qt.AlignRight
-        )
+            ask_color, alignment=QtCore.Qt.AlignRight)
         self.av5_label = self.create_label(
-            ask_color,
-            alignment=QtCore.Qt.AlignRight
-        )
+            ask_color, alignment=QtCore.Qt.AlignRight)
 
         self.lp_label = self.create_label()
         self.return_label = self.create_label(alignment=QtCore.Qt.AlignRight)
@@ -905,11 +691,7 @@ class TradingWidget(QtWidgets.QWidget):
         vbox.addLayout(form2)
         self.setLayout(vbox)
 
-    def create_label(
-            self,
-            color: str = "",
-            alignment: int = QtCore.Qt.AlignLeft
-    ):
+    def create_label(self, color: str = "", alignment: int = QtCore.Qt.AlignLeft):
         """
         Create label with certain font color.
         """
@@ -981,7 +763,7 @@ class TradingWidget(QtWidgets.QWidget):
         contract = self.main_engine.get_contract(vt_symbol)
         if not contract:
             self.name_line.setText("")
-            gateway_name = (self.gateway_combo.currentText())
+            gateway_name = self.gateway_combo.currentText()
         else:
             self.name_line.setText(contract.name)
             gateway_name = contract.gateway_name
@@ -993,7 +775,9 @@ class TradingWidget(QtWidgets.QWidget):
         self.clear_label_text()
 
         # Subscribe tick data
-        req = SubscribeRequest(symbol=symbol, exchange=Exchange(exchange_value))
+        req = SubscribeRequest(
+            symbol=symbol, exchange=Exchange(exchange_value)
+        )
 
         self.main_engine.subscribe(req, gateway_name)
 
@@ -1056,7 +840,7 @@ class TradingWidget(QtWidgets.QWidget):
             price_type=PriceType(str(self.price_type_combo.currentText())),
             volume=volume,
             price=price,
-            offset=Offset(str(self.offset_combo.currentText()))
+            offset=Offset(str(self.offset_combo.currentText())),
         )
 
         gateway_name = str(self.gateway_combo.currentText())
@@ -1107,7 +891,7 @@ class ContractManager(QtWidgets.QWidget):
         "product": "合约分类",
         "size": "合约乘数",
         "pricetick": "价格跳动",
-        "gateway_name": "交易接口"
+        "gateway_name": "交易接口",
     }
 
     def __init__(self, main_engine, event_engine):
@@ -1160,8 +944,7 @@ class ContractManager(QtWidgets.QWidget):
         all_contracts = self.main_engine.get_all_contracts()
         if flt:
             contracts = [
-                contract for contract in all_contracts
-                if flt in contract.vt_symbol
+                contract for contract in all_contracts if flt in contract.vt_symbol
             ]
         else:
             contracts = all_contracts

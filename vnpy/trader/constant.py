@@ -108,7 +108,10 @@ class Currency(Enum):
 
 
 class Interval(Enum):
-    MINUTE = "1分钟"
-    HOUR = "1小时"
-    DAILY = "日线"
-    WEEKLY = "周线"
+    """
+    Interval of bar data.
+    """
+    MINUTE = "1m"
+    HOUR = "1h"
+    DAILY = "d"
+    WEEKLY = "w"

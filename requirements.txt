@@ -2,3 +2,9 @@ PyQt5
 qdarkstyle
 futu-api
 websocket-client
+peewee
+numpy
+pandas
+matplotlib
+seaborn
+jupyter

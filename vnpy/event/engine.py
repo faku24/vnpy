@@ -2,9 +2,9 @@
 Event-driven framework of vn.py framework.
 """
 
-from queue import Queue, Empty
-from threading import Thread, Timer
 from collections import defaultdict
+from queue import Empty, Queue
+from threading import Thread
 from time import sleep
 from typing import Any, Callable
 
@@ -65,7 +65,7 @@ class EventEngine:
         """
         First ditribute event to those handlers registered listening
         to this type. 
-        
+
         Then distrubute event to those general handlers which listens
         to all types.
         """

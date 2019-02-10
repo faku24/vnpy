@@ -6,7 +6,9 @@
 .idea
 *.wpr
 *.wpu
+.vs
 
 # Temp
 build
 dist
+*.local
