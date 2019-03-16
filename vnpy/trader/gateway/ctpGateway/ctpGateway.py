@@ -730,7 +730,8 @@ class CtpTdApi(TdApi):
     #----------------------------------------------------------------------
     def onRspQryInvestorPosition(self, data, error, n, last):
         """持仓查询回报"""
-        if not data['InstrumentID']:
+        symbol = data.get('InstrumentID', '')
+        if not symbol:
             return
         
         # 获取持仓缓存对象
@@ -773,9 +774,9 @@ class CtpTdApi(TdApi):
         
         # 读取冻结
         if pos.direction is DIRECTION_LONG: 
-            pos.frozen += data['LongFrozen']
-        else:
             pos.frozen += data['ShortFrozen']
+        else:
+            pos.frozen += data['LongFrozen']
         
         # 查询回报结束
         if last:
