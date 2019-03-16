@@ -13,18 +13,18 @@ from typing import Any
 from vnpy.event import Event, EventEngine
 from .app import BaseApp
 from .event import (
+    EVENT_TICK,
+    EVENT_ORDER,
+    EVENT_TRADE,
+    EVENT_POSITION,
     EVENT_ACCOUNT,
     EVENT_CONTRACT,
-    EVENT_LOG,
-    EVENT_ORDER,
-    EVENT_POSITION,
-    EVENT_TICK,
-    EVENT_TRADE,
+    EVENT_LOG
 )
 from .gateway import BaseGateway
 from .object import CancelRequest, LogData, OrderRequest, SubscribeRequest
 from .setting import SETTINGS
-from .utility import Singleton, get_temp_path
+from .utility import Singleton, get_folder_path
 
 
 class MainEngine:
@@ -77,11 +77,11 @@ class MainEngine:
         self.add_engine(OmsEngine)
         self.add_engine(EmailEngine)
 
-    def write_log(self, msg: str):
+    def write_log(self, msg: str, source: str = ""):
         """
         Put log event with specific message.
         """
-        log = LogData(msg=msg)
+        log = LogData(msg=msg, gateway_name=source)
         event = Event(EVENT_LOG, log)
         self.event_engine.put(event)
 
@@ -246,7 +246,8 @@ class LogEngine(BaseEngine):
         """
         today_date = datetime.now().strftime("%Y%m%d")
         filename = f"vt_{today_date}.log"
-        file_path = get_temp_path(filename)
+        log_path = get_folder_path("log")
+        file_path = log_path.joinpath(filename)
 
         file_handler = logging.FileHandler(
             file_path, mode="w", encoding="utf8"
@@ -294,7 +295,6 @@ class OmsEngine(BaseEngine):
         self.main_engine.get_order = self.get_order
         self.main_engine.get_position = self.get_position
         self.main_engine.get_account = self.get_account
-        self.main_engine.get_contract = self.get_contract
         self.main_engine.get_contract = self.get_contract
         self.main_engine.get_all_ticks = self.get_all_ticks
         self.main_engine.get_all_orders = self.get_all_orders

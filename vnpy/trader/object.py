@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from logging import INFO
 
-from .constant import Direction, Exchange, Interval, Offset, Status
+from .constant import Direction, Exchange, Interval, Offset, Status, Product, OptionType, PriceType
 
 ACTIVE_STATUSES = set([Status.SUBMITTING, Status.NOTTRADED, Status.PARTTRADED])
 
@@ -14,8 +14,8 @@ ACTIVE_STATUSES = set([Status.SUBMITTING, Status.NOTTRADED, Status.PARTTRADED])
 @dataclass
 class BaseData:
     """
-    Any data object needs a gateway_name as source or 
-    destination and should inherit base data.
+    Any data object needs a gateway_name as source 
+    and should inherit base data.
     """
 
     gateway_name: str
@@ -84,8 +84,8 @@ class BarData(BaseData):
     symbol: str
     exchange: Exchange
     datetime: datetime
-    interval: Interval
 
+    interval: Interval = None
     volume: float = 0
     open_price: float = 0
     high_price: float = 0
@@ -179,6 +179,7 @@ class PositionData(BaseData):
     frozen: float = 0
     price: float = 0
     pnl: float = 0
+    yd_volume: float = 0
 
     def __post_init__(self):
         """"""
@@ -227,13 +228,13 @@ class ContractData(BaseData):
     symbol: str
     exchange: Exchange
     name: str
-    product: str
+    product: Product
     size: int
     pricetick: float
 
     option_strike: float = 0
     option_underlying: str = ""  # vt_symbol of underlying contract
-    option_type: str = ""
+    option_type: OptionType = None
     option_expiry: datetime = None
 
     def __post_init__(self):
@@ -264,7 +265,7 @@ class OrderRequest:
     symbol: str
     exchange: Exchange
     direction: Direction
-    price_type: str
+    price_type: PriceType
     volume: float
     price: float = 0
     offset: Offset = Offset.NONE

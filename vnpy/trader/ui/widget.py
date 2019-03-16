@@ -12,15 +12,15 @@ from vnpy.event import Event, EventEngine
 from ..constant import Direction, Exchange, Offset, PriceType
 from ..engine import MainEngine
 from ..event import (
-    EVENT_ACCOUNT,
-    EVENT_LOG,
-    EVENT_ORDER,
-    EVENT_POSITION,
     EVENT_TICK,
     EVENT_TRADE,
+    EVENT_ORDER,
+    EVENT_POSITION,
+    EVENT_ACCOUNT,
+    EVENT_LOG
 )
 from ..object import OrderRequest, SubscribeRequest
-from ..utility import load_setting, save_setting
+from ..utility import load_json, save_json
 
 COLOR_LONG = QtGui.QColor("red")
 COLOR_SHORT = QtGui.QColor("green")
@@ -298,17 +298,14 @@ class BaseMonitor(QtWidgets.QTableWidget):
         """
         Resize all columns according to contents.
         """
-        self.horizontalHeader().resizeSections(
-            QtWidgets.QHeaderView.ResizeToContents
-        )
+        self.horizontalHeader().resizeSections(QtWidgets.QHeaderView.ResizeToContents)
 
     def save_csv(self):
         """
         Save table data into a csv file
         """
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "保存数据", "", "CSV(*.csv)"
-        )
+            self, "保存数据", "", "CSV(*.csv)")
 
         if not path:
             return
@@ -456,6 +453,7 @@ class PositionMonitor(BaseMonitor):
         "exchange": {"display": "交易所", "cell": EnumCell, "update": False},
         "direction": {"display": "方向", "cell": DirectionCell, "update": False},
         "volume": {"display": "数量", "cell": BaseCell, "update": True},
+        "yd_volume": {"display": "昨仓", "cell": BaseCell, "update": True},
         "frozen": {"display": "冻结", "cell": BaseCell, "update": True},
         "price": {"display": "均价", "cell": BaseCell, "update": False},
         "pnl": {"display": "盈亏", "cell": PnlCell, "update": True},
@@ -492,7 +490,7 @@ class ConnectDialog(QtWidgets.QDialog):
 
         self.main_engine = main_engine
         self.gateway_name = gateway_name
-        self.filename = f"Connect{gateway_name}.vt"
+        self.filename = f"connect_{gateway_name.lower()}.json"
 
         self.widgets = {}
 
@@ -504,11 +502,10 @@ class ConnectDialog(QtWidgets.QDialog):
 
         # Default setting provides field name, field data type and field default value.
         default_setting = self.main_engine.get_default_setting(
-            self.gateway_name
-        )
+            self.gateway_name)
 
         # Saved setting provides field data used last time.
-        loaded_setting = load_setting(self.filename)
+        loaded_setting = load_json(self.filename)
 
         # Initialize line edits and form layout based on setting.
         form = QtWidgets.QFormLayout()
@@ -552,11 +549,11 @@ class ConnectDialog(QtWidgets.QDialog):
             else:
                 field_value = field_type(widget.text())
             setting[field_name] = field_value
-
+        
+        save_json(self.filename, setting)
+        
         self.main_engine.connect(setting, self.gateway_name)
-
-        save_setting(self.filename, setting)
-
+        
         self.accept()
 
 
@@ -595,16 +592,14 @@ class TradingWidget(QtWidgets.QWidget):
 
         self.direction_combo = QtWidgets.QComboBox()
         self.direction_combo.addItems(
-            [Direction.LONG.value, Direction.SHORT.value]
-        )
+            [Direction.LONG.value, Direction.SHORT.value])
 
         self.offset_combo = QtWidgets.QComboBox()
         self.offset_combo.addItems([offset.value for offset in Offset])
 
         self.price_type_combo = QtWidgets.QComboBox()
         self.price_type_combo.addItems(
-            [price_type.value for price_type in PriceType]
-        )
+            [price_type.value for price_type in PriceType])
 
         double_validator = QtGui.QDoubleValidator()
         double_validator.setBottom(0)
@@ -648,20 +643,15 @@ class TradingWidget(QtWidgets.QWidget):
         self.bp5_label = self.create_label(bid_color)
 
         self.bv1_label = self.create_label(
-            bid_color, alignment=QtCore.Qt.AlignRight
-        )
+            bid_color, alignment=QtCore.Qt.AlignRight)
         self.bv2_label = self.create_label(
-            bid_color, alignment=QtCore.Qt.AlignRight
-        )
+            bid_color, alignment=QtCore.Qt.AlignRight)
         self.bv3_label = self.create_label(
-            bid_color, alignment=QtCore.Qt.AlignRight
-        )
+            bid_color, alignment=QtCore.Qt.AlignRight)
         self.bv4_label = self.create_label(
-            bid_color, alignment=QtCore.Qt.AlignRight
-        )
+            bid_color, alignment=QtCore.Qt.AlignRight)
         self.bv5_label = self.create_label(
-            bid_color, alignment=QtCore.Qt.AlignRight
-        )
+            bid_color, alignment=QtCore.Qt.AlignRight)
 
         self.ap1_label = self.create_label(ask_color)
         self.ap2_label = self.create_label(ask_color)
@@ -670,20 +660,15 @@ class TradingWidget(QtWidgets.QWidget):
         self.ap5_label = self.create_label(ask_color)
 
         self.av1_label = self.create_label(
-            ask_color, alignment=QtCore.Qt.AlignRight
-        )
+            ask_color, alignment=QtCore.Qt.AlignRight)
         self.av2_label = self.create_label(
-            ask_color, alignment=QtCore.Qt.AlignRight
-        )
+            ask_color, alignment=QtCore.Qt.AlignRight)
         self.av3_label = self.create_label(
-            ask_color, alignment=QtCore.Qt.AlignRight
-        )
+            ask_color, alignment=QtCore.Qt.AlignRight)
         self.av4_label = self.create_label(
-            ask_color, alignment=QtCore.Qt.AlignRight
-        )
+            ask_color, alignment=QtCore.Qt.AlignRight)
         self.av5_label = self.create_label(
-            ask_color, alignment=QtCore.Qt.AlignRight
-        )
+            ask_color, alignment=QtCore.Qt.AlignRight)
 
         self.lp_label = self.create_label()
         self.return_label = self.create_label(alignment=QtCore.Qt.AlignRight)
@@ -707,9 +692,7 @@ class TradingWidget(QtWidgets.QWidget):
         vbox.addLayout(form2)
         self.setLayout(vbox)
 
-    def create_label(
-        self, color: str = "", alignment: int = QtCore.Qt.AlignLeft
-    ):
+    def create_label(self, color: str = "", alignment: int = QtCore.Qt.AlignLeft):
         """
         Create label with certain font color.
         """
@@ -962,9 +945,7 @@ class ContractManager(QtWidgets.QWidget):
         all_contracts = self.main_engine.get_all_contracts()
         if flt:
             contracts = [
-                contract
-                for contract in all_contracts
-                if flt in contract.vt_symbol
+                contract for contract in all_contracts if flt in contract.vt_symbol
             ]
         else:
             contracts = all_contracts

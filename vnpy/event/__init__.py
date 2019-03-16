@@ -1,1 +1,1 @@
-from .engine import EVENT_TIMER, Event, EventEngine
+from .engine import Event, EventEngine, EVENT_TIMER

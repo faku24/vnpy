@@ -6,36 +6,37 @@ from datetime import datetime
 from queue import Empty
 from threading import Thread
 
-from ibapi import comm
-from ibapi.client import EClient
-from ibapi.common import MAX_MSG_LEN, OrderId, TickAttrib, TickerId
-from ibapi.contract import Contract, ContractDetails
-from ibapi.execution import Execution
-from ibapi.order import Order
-from ibapi.order_state import OrderState
-from ibapi.ticktype import TickType
-from ibapi.wrapper import EWrapper
+from vnpy.api.ib import comm
+from vnpy.api.ib.client import EClient
+from vnpy.api.ib.common import MAX_MSG_LEN, NO_VALID_ID, OrderId, TickAttrib, TickerId
+from vnpy.api.ib.contract import Contract, ContractDetails
+from vnpy.api.ib.execution import Execution
+from vnpy.api.ib.order import Order
+from vnpy.api.ib.order_state import OrderState
+from vnpy.api.ib.ticktype import TickType
+from vnpy.api.ib.wrapper import EWrapper
+from vnpy.api.ib.errors import BAD_LENGTH
 
-from vnpy.trader.constant import (
-    Currency,
-    Direction,
-    Exchange,
-    OptionType,
-    PriceType,
-    Product,
-    Status,
-)
 from vnpy.trader.gateway import BaseGateway
 from vnpy.trader.object import (
-    AccountData,
-    CancelRequest,
-    ContractData,
-    OrderData,
-    OrderRequest,
-    PositionData,
-    SubscribeRequest,
     TickData,
+    OrderData,
     TradeData,
+    PositionData,
+    AccountData,
+    ContractData,
+    OrderRequest,
+    CancelRequest,
+    SubscribeRequest
+)
+from vnpy.trader.constant import (
+    Product,
+    PriceType,
+    Direction,
+    Exchange,
+    Currency,
+    Status,
+    OptionType,
 )
 
 PRICETYPE_VT2IB = {PriceType.LIMIT: "LMT", PriceType.MARKET: "MKT"}
@@ -231,11 +232,7 @@ class IbApi(EWrapper):
         self.gateway.write_log(msg)
 
     def tickPrice(  # pylint: disable=invalid-name
-        self,
-        reqId: TickerId,
-        tickType: TickType,
-        price: float,
-        attrib: TickAttrib,
+        self, reqId: TickerId, tickType: TickType, price: float, attrib: TickAttrib
     ):
         """
         Callback of tick price update.
@@ -351,8 +348,7 @@ class IbApi(EWrapper):
         order = OrderData(
             symbol=ib_contract.conId,
             exchange=EXCHANGE_IB2VT.get(
-                ib_contract.exchange, ib_contract.exchange
-            ),
+                ib_contract.exchange, ib_contract.exchange),
             orderid=orderid,
             direction=DIRECTION_IB2VT[ib_order.action],
             price=ib_order.lmtPrice,
@@ -377,9 +373,8 @@ class IbApi(EWrapper):
         accountid = f"{accountName}.{currency}"
         account = self.accounts.get(accountid, None)
         if not account:
-            account = AccountData(
-                accountid=accountid, gateway_name=self.gateway_name
-            )
+            account = AccountData(accountid=accountid,
+                                  gateway_name=self.gateway_name)
             self.accounts[accountid] = account
 
         name = ACCOUNTFIELD_IB2VT[key]
@@ -410,20 +405,23 @@ class IbApi(EWrapper):
             accountName,
         )
 
+        ib_size = contract.multiplier
+        if not ib_size:
+            ib_size = 1
+        price = averageCost / ib_size
+
         pos = PositionData(
             symbol=contract.conId,
             exchange=EXCHANGE_IB2VT.get(contract.exchange, contract.exchange),
             direction=Direction.NET,
             volume=position,
-            price=averageCost,
+            price=price,
             pnl=unrealizedPNL,
             gateway_name=self.gateway_name,
         )
         self.gateway.on_position(pos)
 
-    def updateAccountTime(
-        self, timeStamp: str
-    ):  # pylint: disable=invalid-name
+    def updateAccountTime(self, timeStamp: str):  # pylint: disable=invalid-name
         """
         Callback of account update time.
         """
@@ -431,9 +429,7 @@ class IbApi(EWrapper):
         for account in self.accounts.values():
             self.gateway.on_account(copy(account))
 
-    def contractDetails(
-        self, reqId: int, contractDetails: ContractDetails
-    ):  # pylint: disable=invalid-name
+    def contractDetails(self, reqId: int, contractDetails: ContractDetails):  # pylint: disable=invalid-name
         """
         Callback of contract data update.
         """
@@ -484,9 +480,7 @@ class IbApi(EWrapper):
 
         self.gateway.on_trade(trade)
 
-    def managedAccounts(
-        self, accountsList: str
-    ):  # pylint: disable=invalid-name
+    def managedAccounts(self, accountsList: str):  # pylint: disable=invalid-name
         """
         Callback of all sub accountid.
         """
@@ -505,8 +499,7 @@ class IbApi(EWrapper):
         self.clientid = setting["clientid"]
 
         self.client.connect(
-            setting["host"], setting["port"], setting["clientid"]
-        )
+            setting["host"], setting["port"], setting["clientid"])
 
         self.thread.start()
 
@@ -607,7 +600,7 @@ class IbClient(EClient):
     def run(self):
         """
         Reimplement the original run message loop of eclient.
-        
+
         Remove all unnecessary try...catch... and allow exceptions to interrupt loop.
         """
         while not self.done and self.isConnected():

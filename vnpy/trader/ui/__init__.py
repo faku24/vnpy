@@ -4,7 +4,7 @@ import sys
 import traceback
 
 import qdarkstyle
-from PyQt5 import QtGui, QtWidgets
+from PyQt5 import QtGui, QtWidgets, QtCore
 
 from .mainwindow import MainWindow
 from ..setting import SETTINGS
@@ -12,14 +12,19 @@ from ..utility import get_icon_path
 
 
 def excepthook(exctype, value, tb):
-    """异常捕捉钩子"""
+    """
+    Raise exception under debug mode, otherwise 
+    show exception detail with QMessageBox.
+    """
+    sys.__excepthook__(exctype, value, tb)
+
     msg = "".join(traceback.format_exception(exctype, value, tb))
     QtWidgets.QMessageBox.critical(
         None, "Exception", msg, QtWidgets.QMessageBox.Ok
     )
 
 
-def create_qapp():
+def create_qapp(app_name: str = "VN Trader"):
     """
     Create Qt Application.
     """
@@ -36,7 +41,7 @@ def create_qapp():
 
     if "Windows" in platform.uname():
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "VN Trader"
+            app_name
         )
 
     return qapp

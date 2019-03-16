@@ -2,8 +2,6 @@
 """
 """
 
-from __future__ import print_function
-
 import hashlib
 import hmac
 import sys
@@ -25,14 +23,15 @@ from vnpy.trader.constant import (
 )
 from vnpy.trader.gateway import BaseGateway
 from vnpy.trader.object import (
-    AccountData,
-    CancelRequest,
-    ContractData,
-    OrderData,
-    PositionData,
-    SubscribeRequest,
     TickData,
+    OrderData,
     TradeData,
+    PositionData,
+    AccountData,
+    ContractData,
+    OrderRequest,
+    CancelRequest,
+    SubscribeRequest,
 )
 
 REST_HOST = "https://www.bitmex.com/api/v1"
@@ -85,9 +84,8 @@ class BitmexGateway(BaseGateway):
         proxy_host = setting["proxy_host"]
         proxy_port = setting["proxy_port"]
 
-        self.rest_api.connect(
-            key, secret, session, server, proxy_host, proxy_port
-        )
+        self.rest_api.connect(key, secret, session,
+                              server, proxy_host, proxy_port)
 
         self.ws_api.connect(key, secret, server, proxy_host, proxy_port)
 
@@ -95,11 +93,11 @@ class BitmexGateway(BaseGateway):
         """"""
         self.ws_api.subscribe(req)
 
-    def send_order(self, req):
+    def send_order(self, req: OrderRequest):
         """"""
         return self.rest_api.send_order(req)
 
-    def cancel_order(self, req):
+    def cancel_order(self, req: CancelRequest):
         """"""
         self.rest_api.cancel_order(req)
 
@@ -198,7 +196,7 @@ class BitmexRestApi(RestClient):
 
         self.gateway.write_log("REST API启动成功")
 
-    def send_order(self, req: SubscribeRequest):
+    def send_order(self, req: OrderRequest):
         """"""
         self.order_count += 1
         orderid = str(self.connect_time + self.order_count)
@@ -260,11 +258,7 @@ class BitmexRestApi(RestClient):
         self.gateway.write_log(msg)
 
     def on_send_order_error(
-        self,
-        exception_type: type,
-        exception_value: Exception,
-        tb,
-        request: Request,
+        self, exception_type: type, exception_value: Exception, tb, request: Request
     ):
         """
         Callback when sending order caused exception.
@@ -282,11 +276,7 @@ class BitmexRestApi(RestClient):
         pass
 
     def on_cancel_order_error(
-        self,
-        exception_type: type,
-        exception_value: Exception,
-        tb,
-        request: Request,
+        self, exception_type: type, exception_value: Exception, tb, request: Request
     ):
         """
         Callback when cancelling order failed on server.
@@ -307,11 +297,7 @@ class BitmexRestApi(RestClient):
         self.gateway.write_log(msg)
 
     def on_error(
-        self,
-        exception_type: type,
-        exception_value: Exception,
-        tb,
-        request: Request,
+        self, exception_type: type, exception_value: Exception, tb, request: Request
     ):
         """
         Callback to handler request exception.
@@ -353,12 +339,7 @@ class BitmexWebsocketApi(WebsocketClient):
         self.trades = set()
 
     def connect(
-        self,
-        key: str,
-        secret: str,
-        server: str,
-        proxy_host: str,
-        proxy_port: int,
+        self, key: str, secret: str, server: str, proxy_host: str, proxy_port: int
     ):
         """"""
         self.key = key
@@ -425,9 +406,8 @@ class BitmexWebsocketApi(WebsocketClient):
         msg = f"触发异常，状态码：{exception_type}，信息：{exception_value}"
         self.gateway.write_log(msg)
 
-        sys.stderr.write(
-            self.exception_detail(exception_type, exception_value, tb)
-        )
+        sys.stderr.write(self.exception_detail(
+            exception_type, exception_value, tb))
 
     def authenticate(self):
         """
@@ -471,8 +451,7 @@ class BitmexWebsocketApi(WebsocketClient):
 
         tick.last_price = d["price"]
         tick.datetime = datetime.strptime(
-            d["timestamp"], "%Y-%m-%dT%H:%M:%S.%fZ"
-        )
+            d["timestamp"], "%Y-%m-%dT%H:%M:%S.%fZ")
         self.gateway.on_tick(copy(tick))
 
     def on_depth(self, d):
@@ -493,8 +472,7 @@ class BitmexWebsocketApi(WebsocketClient):
             tick.__setattr__("ask_volume_%s" % (n + 1), volume)
 
         tick.datetime = datetime.strptime(
-            d["timestamp"], "%Y-%m-%dT%H:%M:%S.%fZ"
-        )
+            d["timestamp"], "%Y-%m-%dT%H:%M:%S.%fZ")
         self.gateway.on_tick(copy(tick))
 
     def on_trade(self, d):
@@ -576,9 +554,8 @@ class BitmexWebsocketApi(WebsocketClient):
         accountid = str(d["account"])
         account = self.accounts.get(accountid, None)
         if not account:
-            account = AccountData(
-                accountid=accountid, gateway_name=self.gateway_name
-            )
+            account = AccountData(accountid=accountid,
+                                  gateway_name=self.gateway_name)
             self.accounts[accountid] = account
 
         account.balance = d.get("marginBalance", account.balance)

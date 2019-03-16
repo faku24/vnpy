@@ -5,16 +5,16 @@ from vnpy.trader.engine import MainEngine
 from vnpy.trader.ui import QtCore, QtGui, QtWidgets
 from vnpy.trader.ui.widget import (
     BaseCell,
-    BaseMonitor,
     EnumCell,
     MsgCell,
     TimeCell,
+    BaseMonitor
 )
 from ..base import (
     APP_NAME,
     EVENT_CTA_LOG,
     EVENT_CTA_STOPORDER,
-    EVENT_CTA_STRATEGY,
+    EVENT_CTA_STRATEGY
 )
 from ..engine import CtaEngine
 
@@ -67,8 +67,6 @@ class CtaManager(QtWidgets.QWidget):
         scroll_area = QtWidgets.QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setWidget(scroll_widget)
-
-        # bottom_height = 300
 
         self.log_monitor = LogMonitor(self.main_engine, self.event_engine)
 
@@ -127,7 +125,7 @@ class CtaManager(QtWidgets.QWidget):
 
     def remove_strategy(self, strategy_name):
         """"""
-        manager = self.managers[strategy_name]
+        manager = self.managers.pop(strategy_name)
         manager.deleteLater()
 
     def add_strategy(self):
@@ -175,7 +173,7 @@ class StrategyManager(QtWidgets.QFrame):
 
     def init_ui(self):
         """"""
-        self.setMaximumHeight(200)
+        self.setMaximumHeight(300)
         self.setFrameShape(self.Box)
         self.setLineWidth(1)
 
@@ -452,7 +450,16 @@ class SettingEditor(QtWidgets.QDialog):
 
         for name, tp in self.edits.items():
             edit, type_ = tp
-            value = type_(edit.text())
+            value_text = edit.text()
+
+            if type_ == bool:
+                if value_text == "True":
+                    value = True
+                else:
+                    value = False
+            else:
+                value = type_(value_text)
+
             setting[name] = value
 
         return setting

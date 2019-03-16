@@ -2,6 +2,7 @@
 Implements main window of VN Trader.
 """
 
+import webbrowser
 from functools import partial
 from importlib import import_module
 from typing import Callable
@@ -10,20 +11,20 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from vnpy.event import EventEngine
 from .widget import (
-    AboutDialog,
+    TickMonitor,
+    OrderMonitor,
+    TradeMonitor,
+    PositionMonitor,
     AccountMonitor,
+    LogMonitor,
     ActiveOrderMonitor,
     ConnectDialog,
     ContractManager,
-    LogMonitor,
-    OrderMonitor,
-    PositionMonitor,
-    TickMonitor,
-    TradeMonitor,
     TradingWidget,
+    AboutDialog,
 )
 from ..engine import MainEngine
-from ..utility import get_icon_path, get_trader_path
+from ..utility import get_icon_path, TRADER_PATH
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -37,8 +38,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_engine = main_engine
         self.event_engine = event_engine
 
-        self.path = get_trader_path()
-        self.window_title = f"VN Trader [{self.path}]"
+        self.window_title = f"VN Trader [{TRADER_PATH}]"
 
         self.connect_dialogs = {}
         self.widgets = {}
@@ -104,11 +104,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # App menu
         all_apps = self.main_engine.get_all_apps()
         for app in all_apps:
-            try:
-                ui_module = import_module(app.app_module + ".ui")
-                widget_class = getattr(ui_module, app.widget_name)
-            except ImportError:
-                continue
+            ui_module = import_module(app.app_module + ".ui")
+            widget_class = getattr(ui_module, app.widget_name)
 
             func = partial(self.open_widget, widget_class, app.app_name)
             icon_path = str(app.app_path.joinpath("ui", app.icon_name))
@@ -130,6 +127,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.add_menu_action(
             help_menu, "测试邮件", "email.ico", self.send_test_email
+        )
+
+        self.add_menu_action(
+            help_menu, "社区论坛", "forum.ico", self.open_forum
         )
 
         self.add_menu_action(
@@ -249,3 +250,8 @@ class MainWindow(QtWidgets.QMainWindow):
         Sending a test email.
         """
         self.main_engine.send_email("VN Trader", "testing")
+
+    def open_forum(self):
+        """
+        """
+        webbrowser.open("https://www.vnpy.com/forum/")

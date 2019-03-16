@@ -1,11 +1,11 @@
 """"""
-
 from abc import ABC
-from typing import Any
+from typing import Any, Callable
 
-from vnpy.trader.constant import Interval
-from vnpy.trader.object import BarData, OrderData, TickData, TradeData
-from .base import CtaOrderType, StopOrder
+from vnpy.trader.constant import Interval, Status
+from vnpy.trader.object import BarData, TickData, OrderData, TradeData
+
+from .base import CtaOrderType, StopOrder, EngineType
 
 
 class CtaTemplate(ABC):
@@ -99,9 +99,21 @@ class CtaTemplate(ABC):
         """
         pass
 
+    def on_stop(self):
+        """
+        Callback when strategy is stopped.
+        """
+        pass
+
     def on_tick(self, tick: TickData):
         """
         Callback of new tick data update.
+        """
+        pass
+
+    def on_bar(self, bar: BarData):
+        """
+        Callback of new bar data update.
         """
         pass
 
@@ -120,12 +132,6 @@ class CtaTemplate(ABC):
     def on_stop_order(self, stop_order: StopOrder):
         """
         Callback of stop order update.
-        """
-        pass
-
-    def on_bar(self, bar: BarData):
-        """
-        Callback of new bar data update.
         """
         pass
 
@@ -163,15 +169,19 @@ class CtaTemplate(ABC):
         """
         Send a new order.
         """
-        return self.cta_engine.send_order(
-            self, order_type, price, volume, stop
-        )
+        if self.trading:
+            vt_orderid = self.cta_engine.send_order(
+                self, order_type, price, volume, stop
+            )
+        else:
+            vt_orderid = ""
+        return vt_orderid
 
     def cancel_order(self, vt_orderid: str):
         """
         Cancel an existing order.
         """
-        self.cta_engine.cancel_order(vt_orderid)
+        self.cta_engine.cancel_order(self, vt_orderid)
 
     def cancel_all(self):
         """
@@ -183,7 +193,7 @@ class CtaTemplate(ABC):
         """
         Write a log message.
         """
-        self.cta_engine.write_log(self, msg)
+        self.cta_engine.write_log(msg, self)
 
     def get_engine_type(self):
         """
@@ -192,13 +202,17 @@ class CtaTemplate(ABC):
         return self.cta_engine.get_engine_type()
 
     def load_bar(
-        self, days: int, interval: Interval = Interval.MINUTE, callback=None
+        self,
+        days: int,
+        interval: Interval = Interval.MINUTE,
+        callback: Callable = None,
     ):
         """
         Load historical bar data for initializing strategy.
         """
-        if callback is None:
+        if not callback:
             callback = self.on_bar
+
         self.cta_engine.load_bar(self.vt_symbol, days, interval, callback)
 
     def load_tick(self, days: int):
@@ -212,3 +226,148 @@ class CtaTemplate(ABC):
         Put an strategy data event for ui update.
         """
         self.cta_engine.put_strategy_event(self)
+
+    def send_email(self, msg):
+        """
+        Send email to default receiver.
+        """
+        self.cta_engine.send_email(msg, self)
+
+    def sync_data(self):
+        """
+        Sync strategy variables value into disk storage.
+        """
+        if self.trading:
+            self.cta_engine.sync_strategy_data(self)
+
+
+class CtaSignal(ABC):
+    """"""
+
+    def __init__(self):
+        """"""
+        self.signal_pos = 0
+
+    def on_tick(self, tick: TickData):
+        """
+        Callback of new tick data update.
+        """
+        pass
+
+    def on_bar(self, bar: BarData):
+        """
+        Callback of new bar data update.
+        """
+        pass
+
+    def set_signal_pos(self, pos):
+        """"""
+        self.signal_pos = pos
+
+    def get_signal_pos(self):
+        """"""
+        return self.signal_pos
+
+
+class TargetPosTemplate(CtaTemplate):
+    """"""
+
+    author = '量衍投资'
+
+    tick_add = 1
+    last_tick = None
+    last_bar = None
+    target_pos = 0
+    orderList = []
+
+    variables = ['target_pos']
+
+    def __init__(self, cta_engine, strategy_name, vt_symbol, setting):
+        """"""
+        super(TargetPosTemplate, self).__init__(
+            cta_engine, strategy_name, vt_symbol, setting
+        )
+
+    def on_tick(self, tick: TickData):
+        """
+        Callback of new tick data update.
+        """
+        self.last_tick = tick
+
+        if self.trading:
+            self.trade()
+
+    def on_bar(self, bar: BarData):
+        """
+        Callback of new bar data update.
+        """
+        self.last_bar = bar
+
+    def on_order(self, order: OrderData):
+        """
+        Callback of new order data update.
+        """
+        if order.status == Status.ALLTRADED or order.status == Status.CANCELLED:
+            if order.vt_orderid in self.orderList:
+                self.orderList.remove(order.vt_orderid)
+
+    def set_target_pos(self, target_pos):
+        """"""
+        self.target_pos = target_pos
+        self.trade()
+
+    def trade(self):
+        """"""
+        self.cancel_all()
+
+        pos_change = self.target_pos - self.pos
+        if not pos_change:
+            return
+
+        long_price = 0
+        short_price = 0
+
+        if self.last_tick:
+            if pos_change > 0:
+                long_price = self.last_tick.ask_price_1 + self.tick_add
+                if self.last_tick.limit_up:
+                    long_price = min(long_price, self.last_tick.limit_up)
+            else:
+                short_price = self.last_tick.bid_price_1 - self.tick_add
+                if self.last_tick.limit_down:
+                    short_price = max(short_price, self.last_tick.limit_down)
+
+        else:
+            if pos_change > 0:
+                long_price = self.last_bar.close_price + self.tick_add
+            else:
+                short_price = self.last_bar.close_price - self.tick_add
+
+        if self.get_engine_type() == EngineType.BACKTESTING:
+            if pos_change > 0:
+                vt_orderid = self.buy(long_price, abs(pos_change))
+            else:
+                vt_orderid = self.short(short_price, abs(pos_change))
+            self.orderList.append(vt_orderid)
+
+        else:
+            if self.orderList:
+                return
+
+            if pos_change > 0:
+                if self.pos < 0:
+                    if pos_change < abs(self.pos):
+                        vt_orderid = self.cover(long_price, pos_change)
+                    else:
+                        vt_orderid = self.cover(long_price, abs(self.pos))
+                else:
+                    vt_orderid = self.buy(long_price, abs(pos_change))
+            else:
+                if self.pos > 0:
+                    if abs(pos_change) < self.pos:
+                        vt_orderid = self.sell(short_price, abs(pos_change))
+                    else:
+                        vt_orderid = self.sell(short_price, abs(self.pos))
+                else:
+                    vt_orderid = self.short(short_price, abs(pos_change))
+            self.orderList.append(vt_orderid)

@@ -1,13 +1,13 @@
 """"""
 
-from peewee import CharField, DateTimeField, FloatField, Model, SqliteDatabase
+from peewee import SqliteDatabase, Model, CharField, DateTimeField, FloatField
 
 from .constant import Exchange, Interval
 from .object import BarData, TickData
-from .utility import get_temp_path
+from .utility import get_file_path
 
-DB_NAME = "database.vt"
-DB = SqliteDatabase(str(get_temp_path(DB_NAME)))
+DB_NAME = "database.db"
+DB = SqliteDatabase(str(get_file_path(DB_NAME)))
 
 
 class DbBarData(Model):
@@ -45,7 +45,7 @@ class DbBarData(Model):
         db_bar.symbol = bar.symbol
         db_bar.exchange = bar.exchange.value
         db_bar.datetime = bar.datetime
-        db_bar.interval = bar.interval
+        db_bar.interval = bar.interval.value
         db_bar.volume = bar.volume
         db_bar.open_price = bar.open_price
         db_bar.high_price = bar.high_price
